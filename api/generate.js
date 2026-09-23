@@ -1,6 +1,6 @@
 import { fal } from "@fal-ai/client";
 
-const MODEL = "fal-ai/kling-video/v3/standard/image-to-video";
+const MODEL = "fal-ai/kling-video/v3/turbo/standard/image-to-video";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
     // The storyboard is still used to build the cinematic direction, while avoiding
     // provider-side multi-shot validation failures.
     const input = {
-      start_image_url: imageUrl,
+      image_url: imageUrl,
       prompt: combinedPrompt,
       duration: String(requestedDuration),
       generate_audio: false,
