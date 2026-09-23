@@ -18,13 +18,13 @@ export default async function handler(req, res) {
 
     if (!imageData || !Array.isArray(shots) || shots.length === 0) {
       return res.status(400).json({
-        error: "Product image and director plan are required."
+        error: "Reference image and director plan are required."
       });
     }
 
     if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageData)) {
       return res.status(400).json({
-        error: "Invalid prepared image. Please upload a JPG, PNG or WebP product image."
+        error: "Invalid prepared image. Please upload a JPG, PNG or WebP reference image."
       });
     }
 
@@ -77,9 +77,9 @@ export default async function handler(req, res) {
       selectedShots
         .map((shot, i) => `Shot ${i + 1}: ${shot.action} Camera: ${shot.camera}.`)
         .join(" ") +
-      ` ${brief || ""} Preserve exact product identity, packaging, proportions, materials and visible text. ` +
+      ` ${brief || ""} Preserve exact people, faces, clothing, objects, proportions, materials, environment and visible text from the reference image. ` +
       `Photorealistic, ${style || "premium commercial"} visual language, ${motion || "cinematic"} camera movement at ${Number(intensity || 45)}% intensity. ` +
-      "Premium advertising cinematography, physically plausible motion, stable geometry, no invented logos, no watermark.";
+      "Cinematic, natural scene-specific cinematography, physically plausible motion, stable geometry, no invented people or objects, no invented text or logos, no watermark.";
 
     // Use the standard single-prompt Kling request for maximum API compatibility.
     // The storyboard is still used to build the cinematic direction, while avoiding
