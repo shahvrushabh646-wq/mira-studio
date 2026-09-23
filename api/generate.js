@@ -72,7 +72,15 @@ export default async function handler(req, res) {
       { type: "image/jpeg" }
     );
 
-    const imageUrl = await fal.storage.upload(imageFile);
+    const uploaded = await fal.storage.upload(imageFile);
+    const imageUrl =
+      typeof uploaded === "string"
+        ? uploaded
+        : uploaded?.url || uploaded?.file?.url;
+
+    if (!imageUrl || typeof imageUrl !== "string") {
+      throw new Error("fal.ai image upload did not return a usable image URL.");
+    }
 
     const input = {
       start_image_url: imageUrl,
@@ -84,7 +92,7 @@ export default async function handler(req, res) {
           `${motion || "cinematic"} camera movement at ${Number(intensity || 45)}% motion intensity, ` +
           "premium advertising cinematography, physically plausible motion, stable geometry, " +
           "no invented logos, no watermark.",
-        duration: Number(shot.duration)
+        duration: String(Number(shot.duration))
       })),
       duration: String(requestedDuration),
       shot_type: "customize",
