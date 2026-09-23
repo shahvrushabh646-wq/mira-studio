@@ -219,8 +219,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
 const discovered=await discoverWanBackends();
 for(let segment=0;segment<segmentCount;segment++){
  let result;let lastError="";
- const segmentPrompt=basePrompt+"
-SEGMENT "+(segment+1)+" OF "+segmentCount+". This is a continuation of the same film. Preserve the reference identity, setting, wardrobe, object geometry and lighting. Start naturally from the previous segment's ending state and make only the next planned beat move.";
+ const segmentPrompt=`${basePrompt}\nSEGMENT ${segment+1} OF ${segmentCount}. This is a continuation of the same film. Preserve the reference identity, setting, wardrobe, object geometry and lighting. Start naturally from the previous segment ending state and make only the next planned beat move.`;
  const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
  if(localUrl){
   try{
