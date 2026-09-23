@@ -181,7 +181,7 @@ const buildPlan=async()=>{
   return values;
  };
  const generateWithFreeSpace=async(space,blob,prompt,negative,d)=>{
-  const client=await Client.connect(space);
+  const client=await Client.connect(space,hfToken?{hf_token:hfToken}:undefined);
   const api=await client.view_api();
   const selected=chooseVideoEndpoint(api);
   if(!selected)throw new Error("No compatible image-to-video endpoint exposed by this Space.");
@@ -209,7 +209,7 @@ const generate=async()=>{
  try{
   setStatus("Preparing reference image…");
   const imageData=await makePreparedData();
-  const blob=await(await fetch(imageData)).blob();
+  let currentBlob=await(await fetch(imageData)).blob();
   const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
   const requestedDuration=Number(duration)||3.5;
   const segmentDuration=Math.min(requestedDuration,3.5);
@@ -237,7 +237,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     try{
      setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
      const form=new FormData();
-     form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
+     form.append("image",currentBlob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
      form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));
      form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
      const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
@@ -265,7 +265,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     const space=shuffledProviders[pi];
     try{
      setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
-     const response=await generateWithFreeSpace(space,blob,segmentPrompt,negative,segmentDuration);
+     const response=await generateWithFreeSpace(space,currentBlob,segmentPrompt,negative,segmentDuration);
      result=response.result;
      if(result){
       const found=extractVideoRef(result,space);
@@ -280,6 +280,29 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     }
    }
    if(segmentUrls.length!==segment+1)throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
+   if(segment+1<segmentCount){
+    try{
+     setStatus("Building continuity frame for segment "+(segment+2)+" of "+segmentCount+"…");
+     const continuityUrl=segmentUrls[segment];
+     const vr=await fetch(continuityUrl,{mode:"cors"});
+     if(vr.ok){
+      const vb=await vr.blob();
+      const vu=URL.createObjectURL(vb);
+      const vv=document.createElement("video");
+      vv.muted=true;vv.playsInline=true;vv.src=vu;
+      await new Promise((res,rej)=>{vv.onloadedmetadata=res;vv.onerror=()=>rej(new Error("continuity decode failed"));});
+      vv.currentTime=Math.max(0,(vv.duration||0)-0.08);
+      await new Promise((res,rej)=>{vv.onseeked=res;vv.onerror=()=>rej(new Error("continuity seek failed"));});
+      const cc=document.createElement("canvas");cc.width=720;cc.height=1280;
+      const ctx=cc.getContext("2d");ctx.fillStyle="#09090b";ctx.fillRect(0,0,cc.width,cc.height);
+      const scale=Math.min(cc.width/vv.videoWidth,cc.height/vv.videoHeight);
+      const dw=vv.videoWidth*scale,dh=vv.videoHeight*scale;
+      ctx.drawImage(vv,(cc.width-dw)/2,(cc.height-dh)/2,dw,dh);
+      currentBlob=await new Promise(res=>cc.toBlob(res,"image/jpeg",.82));
+      URL.revokeObjectURL(vu);
+     }
+    }catch{ /* keep the original reference if the public video blocks frame extraction */ }
+   }
   }
 
   setStatus("Assembling "+segmentUrls.length+" generated segment"+(segmentUrls.length===1?"":"s")+"…");
