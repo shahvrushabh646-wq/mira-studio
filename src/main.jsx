@@ -259,3 +259,4 @@ setVideo(finalVideo);setJob({requestId:"mira-long-film-"+Date.now(),segments:seg
  <p className="fineprint">GPU generation searches live public Wan Spaces and automatically skips incompatible, paused, or unavailable backends. With an HF token, calls use your Hugging Face quota instead of the anonymous/shared pool. Free Hugging Face accounts still have a daily ZeroGPU quota; there is no legitimate unlimited free cloud GPU guarantee.</p>
  </div></section></main></div>}
 createRoot(document.getElementById("root")).render(<App/>);
+// Build-safe source marker
