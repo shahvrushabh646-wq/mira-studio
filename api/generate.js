@@ -1,6 +1,6 @@
 import { fal } from "@fal-ai/client";
 
-const MODEL = "fal-ai/wan-i2v";
+const MODEL = "fal-ai/wan/v2.2-a14b/image-to-video/turbo";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -86,20 +86,15 @@ export default async function handler(req, res) {
     // provider-side multi-shot validation failures.
     const input = {
       image_url: imageUrl,
-      prompt: combinedPrompt.slice(0, 2200),
-      negative_prompt:
-        negativePrompt ||
-        "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality",
-      num_frames: 81,
-      frames_per_second: 24,
+      prompt: combinedPrompt.slice(0, 1800),
       resolution: "480p",
-      num_inference_steps: 20,
-      guide_scale: 5,
-      shift: 5,
-      acceleration: "regular",
-      enable_prompt_expansion: false,
+      aspect_ratio: aspect === "16:9" ? "16:9" : "9:16",
       enable_safety_checker: true,
-      aspect_ratio: aspect === "16:9" ? "16:9" : "9:16"
+      enable_output_safety_checker: false,
+      enable_prompt_expansion: false,
+      acceleration: "regular",
+      video_quality: "low",
+      video_write_mode: "fast"
     };
 
     const queued = await fal.queue.submit(MODEL, { input });
