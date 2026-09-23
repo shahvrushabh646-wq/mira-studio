@@ -15,8 +15,8 @@ export default async function handler(req,res){
       return res.status(400).json({error:"Invalid prepared image. Please upload a JPG, PNG or WebP product image."});
     }
 
-    const total=shots.reduce((n,s)=>n+Number(s.duration||1),0);
-    if(total<3||total>15) return res.status(400).json({error:"Total film duration must be between 3 and 15 seconds."});
+    const total=shots.reduce((n,s)=>n+Number(s.duration||1),0);\n    const requestedDuration=Number(duration)||5;
+    if(total!==requestedDuration) return res.status(400).json({error:`Shot durations (${total}s) do not match film duration (${requestedDuration}s). Please rebuild the director plan.`});\n    if(total<3||total>15) return res.status(400).json({error:"Total film duration must be between 3 and 15 seconds."});
 
     const input={
       start_image_url:imageData,
@@ -24,7 +24,7 @@ export default async function handler(req,res){
         prompt:`Product commercial shot. ${s.action} Camera: ${s.camera}. ${brief||""} Preserve exact product identity, packaging, proportions, materials and visible text. Photorealistic, ${style||"premium commercial"} visual language, ${motion||"cinematic"} camera movement at ${Number(intensity||45)}% motion intensity, premium advertising cinematography, physically plausible motion, stable geometry, no invented logos, no watermark.`,
         duration:Number(s.duration||1)
       })),
-      duration:String(Math.min(15,Math.max(3,Number(duration)||5))),
+      duration:String(Math.min(15,Math.max(3,requestedDuration))),
       aspect_ratio:aspect==="9:16"?"9:16":"16:9",
       shot_type:"customize",
       generate_audio:false,
