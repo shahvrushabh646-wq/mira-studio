@@ -1,6 +1,6 @@
 import { fal } from "@fal-ai/client";
 
-const MODEL = "fal-ai/kling-video/v3/turbo/standard/image-to-video";
+const MODEL = "fal-ai/wan-i2v";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,16 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const {
-      imageData,
-      brief,
-      shots,
-      duration,
-      style,
-      motion,
-      intensity,
-      negativePrompt
-    } = req.body || {};
+    const { imageData, brief, shots, duration, style, motion, intensity, negativePrompt, aspect } = req.body || {};
 
     if (!imageData || !Array.isArray(shots) || shots.length === 0) {
       return res.status(400).json({
@@ -95,12 +86,20 @@ export default async function handler(req, res) {
     // provider-side multi-shot validation failures.
     const input = {
       image_url: imageUrl,
-      prompt: combinedPrompt,
-      duration: String(requestedDuration),
-      generate_audio: false,
+      prompt: combinedPrompt.slice(0, 2200),
       negative_prompt:
         negativePrompt ||
-        "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
+        "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality",
+      num_frames: 81,
+      frames_per_second: 24,
+      resolution: "480p",
+      num_inference_steps: 20,
+      guide_scale: 5,
+      shift: 5,
+      acceleration: "regular",
+      enable_prompt_expansion: false,
+      enable_safety_checker: true,
+      aspect_ratio: aspect === "16:9" ? "16:9" : "9:16"
     };
 
     const queued = await fal.queue.submit(MODEL, { input });
