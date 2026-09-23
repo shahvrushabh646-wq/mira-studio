@@ -36,7 +36,7 @@ class JobResponse(BaseModel):
 def _safe_size(aspect: str) -> str:
     return "704*1280" if aspect == "9:16" else "1280*704"
 
-async def run_wan(job_id: str, image_path: Path, prompt: str, aspect: str, steps: int):
+async def run_wan(job_id: str, image_path: Path, prompt: str, aspect: str, steps: int, duration: int):
     output_path = OUTPUT_DIR / f"{job_id}.mp4"
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Loading Wan 2.2…"}
     cmd = [
@@ -51,6 +51,7 @@ async def run_wan(job_id: str, image_path: Path, prompt: str, aspect: str, steps
         "--image", str(image_path),
         "--prompt", prompt[:7000],
         "--sample_steps", str(max(4, min(int(steps), 50))),
+        "--frame_num", str(max(49, min(int(duration * 24) + 1, 121))),
         "--save_file", str(output_path),
     ]
     try:
@@ -105,6 +106,7 @@ async def generate(
     prompt: str = Form(...),
     aspect: str = Form("9:16"),
     steps: int = Form(20),
+    duration: int = Form(5),
 ):
     if not (WAN_DIR / "generate.py").exists():
         raise HTTPException(500, "Wan2.2 is not installed. Follow local-engine/README.md.")
@@ -116,7 +118,7 @@ async def generate(
     suffix = Path(image.filename or "reference.jpg").suffix.lower() or ".jpg"
     image_path = INPUT_DIR / f"{job_id}{suffix}"
     image_path.write_bytes(await image.read())
-    asyncio.create_task(run_wan(job_id, image_path, prompt, aspect, steps))
+    asyncio.create_task(run_wan(job_id, image_path, prompt, aspect, steps, max(2, min(int(duration), 5))))
     jobs[job_id] = {"status": "queued", "progress": 0, "message": "Queued on your GPU."}
     return {"job_id": job_id}
 
