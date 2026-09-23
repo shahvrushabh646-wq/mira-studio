@@ -82,55 +82,28 @@ export default async function handler(req, res) {
       throw new Error("fal.ai image upload did not return a usable image URL.");
     }
 
+    const combinedPrompt =
+      selectedShots
+        .map((shot, i) => `Shot ${i + 1}: ${shot.action} Camera: ${shot.camera}.`)
+        .join(" ") +
+      ` ${brief || ""} Preserve exact product identity, packaging, proportions, materials and visible text. ` +
+      `Photorealistic, ${style || "premium commercial"} visual language, ${motion || "cinematic"} camera movement at ${Number(intensity || 45)}% intensity. ` +
+      "Premium advertising cinematography, physically plausible motion, stable geometry, no invented logos, no watermark.";
+
+    // Use the standard single-prompt Kling request for maximum API compatibility.
+    // The storyboard is still used to build the cinematic direction, while avoiding
+    // provider-side multi-shot validation failures.
     const input = {
       start_image_url: imageUrl,
-      multi_prompt: selectedShots.map((shot) => ({
-        prompt:
-          `Product commercial shot. ${shot.action} Camera: ${shot.camera}. ${brief || ""} ` +
-          `Preserve exact product identity, packaging, proportions, materials and visible text. ` +
-          `Photorealistic, ${style || "premium commercial"} visual language, ` +
-          `${motion || "cinematic"} camera movement at ${Number(intensity || 45)}% motion intensity, ` +
-          "premium advertising cinematography, physically plausible motion, stable geometry, " +
-          "no invented logos, no watermark.",
-        duration: String(Number(shot.duration))
-      })),
+      prompt: combinedPrompt,
       duration: String(requestedDuration),
-      shot_type: "customize",
       generate_audio: false,
       negative_prompt:
         negativePrompt ||
-        "warped product, deformed packaging, duplicate product, invented logo, fake text, " +
-        "watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
+        "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
     };
 
-    let queued;
-    try {
-      queued = await fal.queue.submit(MODEL, { input });
-    } catch (firstError) {
-      const status = Number(firstError?.status || firstError?.statusCode);
-      const fallbackPrompt = selectedShots
-        .map((shot, i) => `Shot ${i + 1}: ${shot.action} Camera: ${shot.camera}.`)
-        .join(" ");
-      const fallbackInput = {
-        start_image_url: imageUrl,
-        prompt:
-          `Create a continuous premium product commercial. ${fallbackPrompt} ${brief || ""} ` +
-          `Preserve exact product identity, packaging, proportions, materials and visible text. ` +
-          `Photorealistic, ${style || "premium commercial"} visual language, ${motion || "cinematic"} camera movement. ` +
-          "Premium advertising cinematography, physically plausible motion, stable geometry, no invented logos.",
-        duration: String(requestedDuration),
-        generate_audio: false,
-        negative_prompt:
-          negativePrompt ||
-          "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
-      };
-
-      if (status === 422) {
-        queued = await fal.queue.submit(MODEL, { input: fallbackInput });
-      } else {
-        throw firstError;
-      }
-    }
+    const queued = await fal.queue.submit(MODEL, { input });
 
     if (!queued?.request_id) {
       throw new Error("fal.ai did not return a request ID.");
