@@ -235,7 +235,7 @@ for(let segment=0;segment<segmentCount;segment++){
   }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
  }
  const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
-for(let pi=0;pi<shuffledProviders.length;pi++){
+ for(let pi=0;pi<shuffledProviders.length;pi++){
   const space=shuffledProviders[pi];
   try{
    setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
@@ -244,10 +244,16 @@ for(let pi=0;pi<shuffledProviders.length;pi++){
    if(result)break;
   }catch(providerError){
    lastError=String(providerError?.message||providerError||"");
-   if(/ZeroGPU quota|quota exceeded|requested vs\.|remaining quota/i.test(lastError)){throw new Error("The free AI GPU quota is currently unavailable. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");}}
-  const draw=()=>{if(v.ended)return;const ctx=canvas.getContext("2d");ctx.drawImage(v,0,0,canvas.width,canvas.height);requestAnimationFrame(draw)};draw();});}
-  recorder.stop();await done;const blob=new Blob(chunks,{type:"video/webm"});return URL.createObjectURL(blob);
-};
+   if(/ZeroGPU quota|quota exceeded|requested vs\.|remaining quota/i.test(lastError)){
+    throw new Error("The free AI GPU quota is currently unavailable. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
+   }
+  }
+ }
+ if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
+ const found=extractVideoRef(result,space);
+ if(!found)throw new Error("Wan 2.2 returned no usable video file for segment "+(segment+1)+". The backend responded without a recognizable video file.");
+ segmentUrls.push(found);
+}
 const createFreeMotionFallback=async(imageUrl,totalDuration)=>{const response=await fetch(imageUrl);if(!response.ok)throw new Error("Could not load the reference image for free fallback mode.");const imageBlob=await response.blob();const img=new Image();img.src=URL.createObjectURL(imageBlob);await new Promise((res,rej)=>{img.onload=res;img.onerror=rej});const w=aspect==="9:16"?720:960,h=aspect==="9:16"?1280:540;const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");const stream=canvas.captureStream(30);const chunks=[];const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";const recorder=new MediaRecorder(stream,{mimeType:mime});recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);const done=new Promise(r=>recorder.onstop=r);recorder.start();const start=performance.now();const ms=Math.max(3500,Number(totalDuration)*1000);const draw=now=>{const p=Math.min(1,(now-start)/ms);const phase=p*Math.PI*2;const zoom=1.02+0.045*(0.5-0.5*Math.cos(phase));const panX=Math.sin(phase*0.65)*w*0.018;const panY=Math.cos(phase*0.55)*h*0.012;const scale=Math.max(w/img.width,h/img.height)*zoom;const dw=img.width*scale,dh=img.height*scale;ctx.fillStyle="#09090b";ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2+panX,h/2+panY);ctx.rotate(Math.sin(phase*0.5)*0.0025);ctx.drawImage(img,-dw/2,-dh/2,dw,dh);ctx.restore();if(p<1)requestAnimationFrame(draw);else recorder.stop()};requestAnimationFrame(draw);await done;URL.revokeObjectURL(img.src);return URL.createObjectURL(new Blob(chunks,{type:mime}))};
 const generate=async()=>{if(!file||!plan)return;setBusy(true);setError("");setVideo("");try{setStatus("Preparing reference image…");const imageData=await makePreparedData();const blob=await(await fetch(imageData)).blob();const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
 const requestedDuration=Number(duration)||3.5;const segmentDuration=Math.min(requestedDuration,3.5);const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));const segmentUrls=[];const basePrompt=(
