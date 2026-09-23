@@ -75,7 +75,7 @@ function App(){
  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);\n useEffect(()=>{try{const u=localStorage.getItem("miraCloudGpuUrl");const k=localStorage.getItem("miraGpuApiKey");if(u)setLocalEngineUrl(u);if(k)setGpuApiKey(k)}catch{}},[]);\n useEffect(()=>{try{if(localEngineUrl)localStorage.setItem("miraCloudGpuUrl",localEngineUrl);if(gpuApiKey)localStorage.setItem("miraGpuApiKey",gpuApiKey)}catch{}},[localEngineUrl,gpuApiKey]);
  useEffect(()=>{let cancelled=false,objectUrl="";if(!video){setPlayableVideo("");return()=>{}};setPlayableVideo("");fetch(video,{mode:"cors"}).then(r=>{if(!r.ok)throw new Error("Video download failed");return r.blob()}).then(blob=>{if(cancelled)return;objectUrl=URL.createObjectURL(blob);setPlayableVideo(objectUrl)}).catch(()=>{if(!cancelled)setPlayableVideo(video)});return()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl)}},[video]);
  const dims=aspect==="9:16"?{w:1080,h:1920}:{w:1920,h:1080};
- const shots=useMemo(()=>makeDirectorShots("",brief,duration),[brief,duration]);
+ const shots=useMemo(()=>makeDirectorShots(visualAnalysis,brief,duration),[visualAnalysis,brief,duration]);
  const onFile=e=>{const f=e.target.files?.[0];if(!f)return;setFile(f);setPreview(URL.createObjectURL(f));setPlan(null);setVideo("");setError("");setStatus("Image loaded — ready for scene director planning.")};
  const analyzeReference=async(blob)=>{
  const vision=await Client.connect("developer0hye/Qwen2.5-VL-7B-Instruct");
@@ -212,7 +212,7 @@ for(let segment=0;segment<segmentCount;segment++){
   try{
    setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your personal Wan GPU…");
    const form=new FormData();form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));form.append("director",JSON.stringify({scene:plan.category,subject:"subjects visible in the reference",action:plan.shots[segment]?.action||brief,camera:plan.shots[segment]?.camera||"slow cinematic push-in",preservation:"preserve identities, anatomy, objects, architecture, colors and readable text"}));
-   const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{Authorization:"Bearer "+gpuApiKey}:undefined,body:form});if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
+   const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
    const data=await response.json();
    if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
    if(!data.job_id)throw new Error("Configured GPU server returned no job id.");
