@@ -57,14 +57,30 @@ function detectCategory(text=""){
  return "generic";
 }
 
-function makeDirectorShots(analysis,brief,duration){
- const category=detectCategory((analysis||"")+" "+(brief||""));
- const template=storyTemplates[category]||storyTemplates.generic;
+function parseDirectorShots(analysis,brief,duration){
  const count=Math.max(1,Math.min(20,Math.ceil((Number(duration)||3.5)/3.5)));
  const base=(Number(duration)||3.5)/count;
+ const fallback=storyTemplates[detectCategory((analysis||"")+" "+(brief||"")]||storyTemplates.generic;
+ let parsed=[];
+ try{
+  const fenced=String(analysis||"").match(/\\{[\\s\\S]*\\}/)?.[0];
+  if(fenced){
+   const obj=JSON.parse(fenced);
+   if(Array.isArray(obj))parsed=obj;
+   else if(Array.isArray(obj.shots))parsed=obj.shots;
+   else if(Array.isArray(obj.cinematic_beats))parsed=obj.cinematic_beats;
+  }
+ }catch{}
+ const cleaned=parsed.map((s,i)=>({
+  name:String(s.name||s.title||s.beat||("Shot "+(i+1))).trim(),
+  action:String(s.action||s.subject_action||s.motion||"Natural movement supported by the reference image.").trim(),
+  camera:String(s.camera||s.camera_movement||s.movement||"slow cinematic push-in").trim()
+ })).filter(s=>s.name&&s.action&&s.camera);
+ const source=cleaned.length?cleaned:fallback.map(s=>({name:s[0],action:s[1],camera:s[2]}));
  return Array.from({length:count},(_,i)=>{
-  const t=template[i%template.length],cycle=Math.floor(i/template.length);
-  return {name:cycle?t[0]+" "+(cycle+1):t[0],action:t[1],camera:t[2],duration:Math.round(base*100)/100};
+  const s=source[i%source.length];
+  const cycle=Math.floor(i/source.length);
+  return {...s,name:cycle?s.name+" "+(cycle+1):s.name,duration:Math.round(base*100)/100};
  });
 }
 
@@ -86,7 +102,7 @@ function App(){
  const vision=await Client.connect("developer0hye/Qwen2.5-VL-7B-Instruct");
  const prompt=`Act as a visual scene director. Study this exact image carefully before generating anything. Identify the scene type, every important visible person, object, animal, vehicle, structure, text/sign, clothing, pose, spatial relationships, background, lighting, colors, camera angle and distinctive details. For people, describe their visible pose and what action the scene naturally suggests. For classroom/lecture images, identify teacher, students, board/books/desks and the teaching activity visible. For events, identify the central activity and crowd/environment. For nature, identify the main subject and environmental motion. Read clearly visible wording but never invent missing text. Separate visible facts from uncertainty.
 
-Return a structured, detailed DIRECTOR REFERENCE SHEET for an image-to-video model. Include:
+Return ONLY valid JSON for an image-to-video director. No markdown, no commentary, no code fences. Use this exact top-level shape: {"scene":"...","subjects":[{"description":"...","position":"...","pose":"...","visible_action":"..."}],"composition":"...","camera":"...","lighting":"...","environmental_motion":["..."],"preservation":["..."],"avoid":["..."],"shots":[{"name":"...","action":"...","camera":"...","framing":"...","timing":"...","transition":"..."}]}. Create 1 shot for 3.5s, 2 for 7s, 5 for 15s, 10 for 30s, and up to 20 for 60s. Make each shot materially different and grounded in visible evidence. Then fill these fields inside the JSON:
 1. SCENE — exact scene type, location/setting, time/atmosphere and what is visibly happening.
 2. SUBJECTS — every important person/animal/object, position in frame, pose, orientation, gaze, clothing/materials and distinguishing details.
 3. ACTION — what each visible subject is doing now, the natural next movement, and what must remain still.
@@ -98,7 +114,7 @@ Return a structured, detailed DIRECTOR REFERENCE SHEET for an image-to-video mod
 9. PRESERVATION — identities, faces, body proportions, object shapes, logos, signs, readable text, colors, architecture and spatial relationships that must not change.
 10. AVOID — movements, objects, people, text or events not supported by the image.
 
-For every proposed action and camera choice, explain it from visible evidence. If something cannot be established, mark it as uncertain instead of inventing it. Do not turn every image into a product advertisement.`;
+For every proposed action and camera choice, ground it in visible evidence. If something cannot be established, mark it uncertain instead of inventing it. Do not turn every image into a product advertisement.`;
  const r=await vision.predict([handle_file(blob),prompt],"/qwen_vl_inference");
  return String(r?.data?.[0]||"").slice(0,7000);
 };
@@ -112,7 +128,7 @@ const buildPlan=async()=>{
   let analysis="";
   try{analysis=await analyzeReference(blob);setVisualAnalysis(analysis)}
   catch(e){analysis="Reference image is the source of truth. Preserve the exact visible people, objects, environment, composition and clearly visible wording. Infer actions only from what the scene visibly supports."}
-  const generated=makeDirectorShots(analysis,brief,duration);
+  const generated=parseDirectorShots(analysis,brief,duration);
   setPlan({concept:brief,category:detectCategory(analysis+" "+brief),reference:analysis,shots:generated});
   setStatus("Director step 2/2 — shot plan built from the actual reference. Review it before generation.");
  }catch(e){setError(e.message||"Director analysis failed");setStatus("")}
@@ -331,7 +347,7 @@ return <div className="app"><header><div className="brand"><div className="logo"
  <div className="framecheck"><Check size={15}/><span>Delivery frame: <b>{dims.w} × {dims.h}</b> • {aspect}</span></div>
  <button className="primary" disabled={!file||busy} onClick={buildPlan}><Sparkles size={18}/> {busy?"Studying reference…":plan?"Refresh director plan":"Study image & build director plan"}</button>
  </div>
- <div className="card"><div className="cardhead"><span>02</span><h2>Director shot plan</h2><span className="planmeta">{style} • {motion}</span></div>{plan?<div className="plan"><div className="planintro"><Clapperboard size={19}/><div><b>{plan.shots.length} shots • {duration}s total</b><p>Every shot is derived from the reference sheet and has a distinct action + camera language.</p></div></div>{plan.shots.map((s,i)=><div className={"shot "+(expanded===i?"open":"")} key={s.name}><div className="num">{String(i+1).padStart(2,"0")}</div><div className="shotbody"><button className="shottoggle" onClick={()=>setExpanded(expanded===i?-1:i)}><span><b>{s.name}</b><small>{s.duration}s • {s.camera}</small></span>{expanded===i?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>{expanded===i&&<div className="shotedit"><label>Action<textarea value={s.action} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,action:e.target.value}:x)};setPlan(n)}}/></label><label>Camera<select value={s.camera} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,camera:e.target.value}:x)};setPlan(n)}}>{cameraMoves.map(m=><option key={m}>{m}</option>)}</select></label></div>} </div></div>)}<div className="timeline">{plan.shots.map((s,i)=><button key={i} className={expanded===i?"active":""} style={{flex:s.duration}} onClick={()=>setExpanded(i)}>{i+1}</button>)}</div><button className="secondary" onClick={buildPlan}><WandSparkles size={16}/> Rebuild director plan</button></div>:<div className="empty"><Film size={35}/><p>No shot plan yet.</p><small>Upload an image and let Mira study it before acting as the scene director.</small></div>}</div>
+ <div className="card"><div className="cardhead"><span>02</span><h2>Director shot plan</h2><span className="planmeta">{style} • {motion}</span></div>{plan?<div className="plan"><div className="planintro"><Clapperboard size={19}/><div><b>{plan.shots.length} shots • {duration}s total</b><p>Every shot is planned from the reference image analysis with distinct action + camera language.</p></div></div>{plan.shots.map((s,i)=><div className={"shot "+(expanded===i?"open":"")} key={s.name}><div className="num">{String(i+1).padStart(2,"0")}</div><div className="shotbody"><button className="shottoggle" onClick={()=>setExpanded(expanded===i?-1:i)}><span><b>{s.name}</b><small>{s.duration}s • {s.camera}</small></span>{expanded===i?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>{expanded===i&&<div className="shotedit"><label>Action<textarea value={s.action} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,action:e.target.value}:x)};setPlan(n)}}/></label><label>Camera<select value={s.camera} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,camera:e.target.value}:x)};setPlan(n)}}>{cameraMoves.map(m=><option key={m}>{m}</option>)}</select></label></div>} </div></div>)}<div className="timeline">{plan.shots.map((s,i)=><button key={i} className={expanded===i?"active":""} style={{flex:s.duration}} onClick={()=>setExpanded(i)}>{i+1}</button>)}</div><button className="secondary" onClick={buildPlan}><WandSparkles size={16}/> Rebuild director plan</button></div>:<div className="empty"><Film size={35}/><p>No shot plan yet.</p><small>Upload an image and let Mira study it before acting as the scene director.</small></div>}</div>
  <div className="card stage"><div className="cardhead"><span>03</span><h2>AI generation</h2><div className="modeltag">{engine==="personal"?"Wan 2.2 • Personal GPU":"Wan 2.2 • Real AI I2V"}</div></div><div className="preview">{video?<>{playableVideo?<video src={playableVideo} poster={preview} controls autoPlay loop muted playsInline preload="auto"/>:<div className="videoLoading">Loading generated video…</div>}<a className="videoOpen" href={video} target="_blank" rel="noreferrer">Open generated video</a></>:preview?<div className="sourcepreview"><img src={preview}/><span>Validated reference • {dims.w}×{dims.h}</span></div>:<div className="empty"><Film size={35}/><p>Final film preview</p><small>Your generated film appears here. If the embedded preview does not load, use Open generated video.</small></div>}</div>
  <div className="actions"><button className="primary" disabled={!file||!plan||busy} onClick={generate}>{busy?<><Loader2 className="spin" size={18}/> {status||"Generating…"}</>:<><Play size={18}/> Generate AI film</>}</button>{video&&<a className="secondary" href={video} target="_blank" rel="noreferrer" download="mira-ai-film"><Download size={16}/> Save video</a>}</div>
  <div className="status">{status&&<><span className="statusdot"/>{status}</>}{job&&<span className="request">Request {job.requestId.slice(0,8)}…</span>}</div><div className="generationNotes"><span><Check size={13}/> Real AI image-to-video</span><span><Check size={13}/> Scene-specific shot direction</span><span><Check size={13}/> Identity / text protection</span></div>{error&&<div className="error"><AlertTriangle size={16}/>{error}</div>}
