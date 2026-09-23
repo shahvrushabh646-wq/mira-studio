@@ -45,3 +45,10 @@ header{height:68px;backdrop-filter:blur(18px);background:rgba(9,9,11,.76);border
 .fineprint{color:#70727b;line-height:1.55}
 .error{border-radius:10px;border:1px solid rgba(255,90,90,.22);background:rgba(255,70,70,.06)}
 @media(max-width:760px){.hero{padding:34px 0 20px}.hero h1{font-size:38px}.workflow{overflow:auto}.provider{display:none}.card{border-radius:15px}}
+
+.promptLabel{display:block;margin:14px 0 0}
+.promptLabel>label{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:8px;font-size:13px;font-weight:700;color:#e8e8eb}
+.promptLabel>label span{font-size:11px;font-weight:400;color:#777a84}
+.creativePrompt{width:100%;min-height:118px;resize:vertical;box-sizing:border-box;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#0d0d11;color:#f4f4f5;padding:13px 14px;line-height:1.55;outline:none;font:inherit}
+.creativePrompt::placeholder{color:#666872}
+.creativePrompt:focus{border-color:rgba(255,255,255,.28);box-shadow:0 0 0 3px rgba(255,255,255,.035)}
