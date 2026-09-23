@@ -1,6 +1,6 @@
 import { fal } from "@fal-ai/client";
 
-const MODEL="fal-ai/kling-video/v3/standard/image-to-video";
+const MODEL="fal-ai/kling-video/v3/turbo/standard/image-to-video";
 
 export default async function handler(req,res){
  if(!process.env.FAL_KEY) return res.status(500).json({error:"FAL_KEY is not configured."});
