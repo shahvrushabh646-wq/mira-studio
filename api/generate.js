@@ -18,8 +18,8 @@ export default async function handler(req,res){
     const total=shots.reduce((n,s)=>n+Number(s.duration||1),0);\n    const requestedDuration=Number(duration)||5;
     if(total!==requestedDuration) return res.status(400).json({error:`Shot durations (${total}s) do not match film duration (${requestedDuration}s). Please rebuild the director plan.`});\n    if(total<3||total>15) return res.status(400).json({error:"Total film duration must be between 3 and 15 seconds."});
 
-    const input={
-      start_image_url:imageData,
+    const imageBuffer=Buffer.from(imageData.split(",")[1],"base64");\n    const imageFile=new File([imageBuffer],"mira-reference.jpg",{type:"image/jpeg"});\n    const imageUrl=await fal.storage.upload(imageFile);\n\n    const input={
+      start_image_url:imageUrl,
       multi_prompt:shots.slice(0,6).map(s=>({
         prompt:`Product commercial shot. ${s.action} Camera: ${s.camera}. ${brief||""} Preserve exact product identity, packaging, proportions, materials and visible text. Photorealistic, ${style||"premium commercial"} visual language, ${motion||"cinematic"} camera movement at ${Number(intensity||45)}% motion intensity, premium advertising cinematography, physically plausible motion, stable geometry, no invented logos, no watermark.`,
         duration:Number(s.duration||1)
