@@ -117,12 +117,11 @@ const buildPlan=async()=>{
  const checkLocalEngine=async()=>{const base=localEngineUrl.replace(/\/$/,"");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3500);try{const r=await fetch(base+"/health",{method:"GET",signal:controller.signal,mode:"cors"});if(!r.ok)throw new Error("Local GPU engine returned HTTP "+r.status);const data=await r.json();if(!data?.ready)throw new Error("Wan 2.2 local engine is reachable, but the model/checkpoint is not ready.");return data}finally{clearTimeout(timer)}};
  const discoverWanBackends=async()=>{
   const fallback=[
+    "r3gm/wan2-2-fp8da-aoti-preview",
+    "r3gm/wan2-2-fp8da-aoti-preview2",
     "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
     "observantdistressed/Wan2.2-14B-Fast-Preview",
-    "kulkas2pintu/Wan2.2-14B-Preview",
-    "r3gm/Wan2.2-14B-Preview",
-    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step",
-    "Rchoks/Wan2.2-14B-Fast-Preview"
+    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step"
   ];
   try{
     const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
@@ -145,22 +144,31 @@ const buildPlan=async()=>{
   const params=endpoint?.parameters||endpoint?.inputs||[];
   if(!Array.isArray(params)||!params.length)return null;
   const values=params.map(p=>{
-   const label=String(p?.label||p?.parameter_name||p?.name||"").toLowerCase();
+   const label=String(p?.label||p?.parameter_name||p?.name||"").trim().toLowerCase();
    const type=String(p?.type||p?.component||"").toLowerCase();
-   if(/image|input.*image|start.*image|reference/.test(label)||/image|file/.test(type))return handle_file(blob);
+   // Optional "Last Image" must be null; sending the reference image here changes the model's conditioning.
+   if(/last image|optional.*image|end image|last frame/.test(label))return null;
+   if(/input image|reference image|start image|image to animate|source image/.test(label))return handle_file(blob);
    if(/negative|neg.?prompt/.test(label))return negative;
-   if(/prompt|caption|description|text/.test(label))return prompt;
-   if(/duration|seconds|length/.test(label))return Math.min(Number(d)||3.5,5);
-   if(/frame|frames/.test(label))return Math.max(17,Math.min(81,Math.round((Number(d)||3.5)*16)+1));
-   if(/step|steps/.test(label))return 8;
+   if(label==="prompt"||/^prompt\b/.test(label)||/caption|description/.test(label))return prompt;
+   if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,5);
+   if(/frame|frames|num frames/.test(label))return Math.max(17,Math.min(81,Math.round((Number(d)||3.5)*16)+1));
+   if(/step|steps|inference/.test(label))return 6;
    if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
-   if(/guidance|cfg/.test(label))return 5;
+   if(/randomize/.test(label))return true;
+   if(/guidance|cfg/.test(label))return 1;
    if(/fps|frame.?rate/.test(label))return 16;
    if(/height/.test(label))return aspect==="9:16"?1280:540;
    if(/width/.test(label))return aspect==="9:16"?720:960;
+   if(/quality/.test(label))return 6;
+   if(/scheduler/.test(label))return "UniPCMultistep";
+   if(/flow shift/.test(label))return 3;
+   if(/frame multiplier/.test(label))return 2;
+   if(/upscale factor/.test(label))return 1;
+   if(/safe mode|safety|enable.*checker|display result/.test(label))return true;
    if(p?.default!==undefined&&p?.default!==null)return p.default;
    if(/bool|checkbox|enable/.test(type))return false;
-   if(/number|slider/.test(type))return 1;
+   if(/number|slider|float|int/.test(type))return 1;
    return null;
   });
   const required=params.filter(p=>p?.optional===false||p?.required===true);
