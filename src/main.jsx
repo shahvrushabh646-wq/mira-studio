@@ -204,107 +204,98 @@ const buildPlan=async()=>{
   recorder.stop();await done;const blob=new Blob(chunks,{type:"video/webm"});return URL.createObjectURL(blob);
 };
 const createFreeMotionFallback=async(imageUrl,totalDuration)=>{const response=await fetch(imageUrl);if(!response.ok)throw new Error("Could not load the reference image for free fallback mode.");const imageBlob=await response.blob();const img=new Image();img.src=URL.createObjectURL(imageBlob);await new Promise((res,rej)=>{img.onload=res;img.onerror=rej});const w=aspect==="9:16"?720:960,h=aspect==="9:16"?1280:540;const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");const stream=canvas.captureStream(30);const chunks=[];const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";const recorder=new MediaRecorder(stream,{mimeType:mime});recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);const done=new Promise(r=>recorder.onstop=r);recorder.start();const start=performance.now();const ms=Math.max(3500,Number(totalDuration)*1000);const draw=now=>{const p=Math.min(1,(now-start)/ms);const phase=p*Math.PI*2;const zoom=1.02+0.045*(0.5-0.5*Math.cos(phase));const panX=Math.sin(phase*0.65)*w*0.018;const panY=Math.cos(phase*0.55)*h*0.012;const scale=Math.max(w/img.width,h/img.height)*zoom;const dw=img.width*scale,dh=img.height*scale;ctx.fillStyle="#09090b";ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2+panX,h/2+panY);ctx.rotate(Math.sin(phase*0.5)*0.0025);ctx.drawImage(img,-dw/2,-dh/2,dw,dh);ctx.restore();if(p<1)requestAnimationFrame(draw);else recorder.stop()};requestAnimationFrame(draw);await done;URL.revokeObjectURL(img.src);return URL.createObjectURL(new Blob(chunks,{type:mime}))};
-const generate=async()=>{if(!file||!plan)return;setBusy(true);setError("");setVideo("");try{setStatus("Preparing reference image…");const imageData=await makePreparedData();const blob=await(await fetch(imageData)).blob();const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
-const requestedDuration=Number(duration)||3.5;const segmentDuration=Math.min(requestedDuration,3.5);const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));const segmentUrls=[];const basePrompt=(
-`FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Do not treat it as a generic reference. Reconstruct and animate the exact scene described by the visual director analysis.
+const generate=async()=>{
+ if(!file||!plan)return;
+ setBusy(true);setError("");setVideo("");
+ try{
+  setStatus("Preparing reference image…");
+  const imageData=await makePreparedData();
+  const blob=await(await fetch(imageData)).blob();
+  const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
+  const requestedDuration=Number(duration)||3.5;
+  const segmentDuration=Math.min(requestedDuration,3.5);
+  const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));
+  const segmentUrls=[];
+  const basePrompt=(`
+FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Reconstruct and animate the exact scene described by the visual director analysis.
 VISUAL DIRECTOR SHEET:
 ${visualAnalysis||plan.reference||"Preserve the visible scene faithfully."}
 USER CREATIVE PROMPT / BRIEF:
 ${brief}
 DIRECTOR SHOT PLAN:
 ${shotDirection}
-For every beat, follow the described subject action, camera angle, camera height, framing, lens perspective, lighting, environment motion and timing. The user brief controls the creative intent, while the image and director sheet control what is physically present. If the user asks for an action that conflicts with the visible image, adapt it to the closest physically plausible version using the visible subjects and environment. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity between beats. Use natural acceleration/deceleration, realistic depth and physically plausible interaction. Never add unrelated people/objects, invent text, morph subjects, or turn the scene into a product advertisement unless the image and user brief explicitly support that.
+Follow the described subject action, camera angle, framing, lighting, environment motion and timing. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity. Never add unrelated people or objects, invent text, morph subjects, or turn the scene into a product advertisement unless supported.
 ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
-).slice(0,10000);
-const discovered=await discoverWanBackends();
-for(let segment=0;segment<segmentCount;segment++){
- let result;let lastError="";
- const segmentPrompt=`${basePrompt}\nSEGMENT ${segment+1} OF ${segmentCount}. This is a continuation of the same film. Preserve the reference identity, setting, wardrobe, object geometry and lighting. Start naturally from the previous segment ending state and make only the next planned beat move.`;
- const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
- if(localUrl){
-  try{
-   setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your personal Wan GPU…");
-   const form=new FormData();form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));form.append("director",JSON.stringify({scene:plan.category,subject:"subjects visible in the reference",action:plan.shots[segment]?.action||brief,camera:plan.shots[segment]?.camera||"slow cinematic push-in",preservation:"preserve identities, anatomy, objects, architecture, colors and readable text"}));
-   const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
-   const data=await response.json();
-   if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
-   if(!data.job_id)throw new Error("Configured GPU server returned no job id.");
-   for(let attempt=0;attempt<180;attempt++){await new Promise(r=>setTimeout(r,2000));const sr=await fetch(localUrl.replace(/\/$/,"")+"/jobs/"+data.job_id);if(!sr.ok)throw new Error("Could not read cloud GPU job status.");const st=await sr.json();if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);if(st.status==="completed"&&st.video_url){segmentUrls.push(new URL(st.video_url,localUrl).href);break;}if(st.status==="failed")throw new Error(st.message||"Cloud GPU generation failed.");}
-   if(segmentUrls.length===segment+1)continue;
-   throw new Error("Cloud GPU generation timed out.");
-  }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
- }
- const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
- for(let pi=0;pi<shuffledProviders.length;pi++){
-  const space=shuffledProviders[pi];
-  try{
-   setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
-   const response=await generateWithFreeSpace(space,blob,segmentPrompt,negative,segmentDuration);
-   result=response.result;
-   if(result)break;
-  }catch(providerError){
-   lastError=String(providerError?.message||providerError||"");
-   if(/ZeroGPU quota|quota exceeded|requested vs\.|remaining quota/i.test(lastError)){
-    throw new Error("The free AI GPU quota is currently unavailable. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
+  ).slice(0,10000);
+  const discovered=await discoverWanBackends();
+
+  for(let segment=0;segment<segmentCount;segment++){
+   let result=null,lastError="";
+   const segmentPrompt=`${basePrompt}\\nSEGMENT ${segment+1} OF ${segmentCount}. Continue naturally from the reference and preserve the same scene, identities, wardrobe, objects and lighting.`;
+   const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
+
+   if(localUrl){
+    try{
+     setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
+     const form=new FormData();
+     form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
+     form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));
+     form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
+     const response=await fetch(localUrl.replace(/\\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
+     if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
+     const data=await response.json();
+     if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
+     if(!data.job_id)throw new Error("Configured GPU server returned no job id.");
+     let completed=false;
+     for(let attempt=0;attempt<180;attempt++){
+      await new Promise(r=>setTimeout(r,2000));
+      const sr=await fetch(localUrl.replace(/\\/$/,"")+"/jobs/"+data.job_id);
+      if(!sr.ok)throw new Error("Could not read cloud GPU job status.");
+      const st=await sr.json();
+      if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
+      if(st.status==="completed"&&st.video_url){segmentUrls.push(new URL(st.video_url,localUrl).href);completed=true;break;}
+      if(st.status==="failed")throw new Error(st.message||"Cloud GPU generation failed.");
+     }
+     if(completed)continue;
+     throw new Error("Cloud GPU generation timed out.");
+    }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
    }
+
+   const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
+   for(let pi=0;pi<shuffledProviders.length;pi++){
+    const space=shuffledProviders[pi];
+    try{
+     setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
+     const response=await generateWithFreeSpace(space,blob,segmentPrompt,negative,segmentDuration);
+     result=response.result;
+     if(result){
+      const found=extractVideoRef(result,space);
+      if(found){segmentUrls.push(found);break;}
+      lastError="Wan 2.2 returned no usable video file.";
+     }
+    }catch(providerError){
+     lastError=String(providerError?.message||providerError||"");
+     if(/ZeroGPU quota|quota exceeded|requested vs\\.|remaining quota/i.test(lastError)){
+      throw new Error("The free AI GPU quota is currently unavailable. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
+     }
+    }
+   }
+   if(segmentUrls.length!==segment+1)throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
   }
+
+  setStatus("Assembling "+segmentUrls.length+" generated segment"+(segmentUrls.length===1?"":"s")+"…");
+  const finalVideo=await stitchVideos(segmentUrls);
+  setVideo(finalVideo);
+  setJob({requestId:"mira-long-film-"+Date.now(),segments:segmentUrls.length});
+  setStatus("AI film ready — "+requestedDuration+"s requested.");
+ }catch(e){
+  const message=String(e?.message||e||"Free Wan generation failed");
+  setError(message);setStatus("");
+ }finally{
+  setBusy(false);
  }
- if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
- const found=extractVideoRef(result,space);
- if(!found)throw new Error("Wan 2.2 returned no usable video file for segment "+(segment+1)+". The backend responded without a recognizable video file.");
- segmentUrls.push(found);
-}
-const createFreeMotionFallback=async(imageUrl,totalDuration)=>{const response=await fetch(imageUrl);if(!response.ok)throw new Error("Could not load the reference image for free fallback mode.");const imageBlob=await response.blob();const img=new Image();img.src=URL.createObjectURL(imageBlob);await new Promise((res,rej)=>{img.onload=res;img.onerror=rej});const w=aspect==="9:16"?720:960,h=aspect==="9:16"?1280:540;const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");const stream=canvas.captureStream(30);const chunks=[];const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";const recorder=new MediaRecorder(stream,{mimeType:mime});recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);const done=new Promise(r=>recorder.onstop=r);recorder.start();const start=performance.now();const ms=Math.max(3500,Number(totalDuration)*1000);const draw=now=>{const p=Math.min(1,(now-start)/ms);const phase=p*Math.PI*2;const zoom=1.02+0.045*(0.5-0.5*Math.cos(phase));const panX=Math.sin(phase*0.65)*w*0.018;const panY=Math.cos(phase*0.55)*h*0.012;const scale=Math.max(w/img.width,h/img.height)*zoom;const dw=img.width*scale,dh=img.height*scale;ctx.fillStyle="#09090b";ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2+panX,h/2+panY);ctx.rotate(Math.sin(phase*0.5)*0.0025);ctx.drawImage(img,-dw/2,-dh/2,dw,dh);ctx.restore();if(p<1)requestAnimationFrame(draw);else recorder.stop()};requestAnimationFrame(draw);await done;URL.revokeObjectURL(img.src);return URL.createObjectURL(new Blob(chunks,{type:mime}))};
-const generate=async()=>{if(!file||!plan)return;setBusy(true);setError("");setVideo("");try{setStatus("Preparing reference image…");const imageData=await makePreparedData();const blob=await(await fetch(imageData)).blob();const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
-const requestedDuration=Number(duration)||3.5;const segmentDuration=Math.min(requestedDuration,3.5);const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));const segmentUrls=[];const basePrompt=(
-`FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Do not treat it as a generic reference. Reconstruct and animate the exact scene described by the visual director analysis.
-VISUAL DIRECTOR SHEET:
-${visualAnalysis||plan.reference||"Preserve the visible scene faithfully."}
-USER CREATIVE PROMPT / BRIEF:
-${brief}
-DIRECTOR SHOT PLAN:
-${shotDirection}
-For every beat, follow the described subject action, camera angle, camera height, framing, lens perspective, lighting, environment motion and timing. The user brief controls the creative intent, while the image and director sheet control what is physically present. If the user asks for an action that conflicts with the visible image, adapt it to the closest physically plausible version using the visible subjects and environment. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity between beats. Use natural acceleration/deceleration, realistic depth and physically plausible interaction. Never add unrelated people/objects, invent text, morph subjects, or turn the scene into a product advertisement unless the image and user brief explicitly support that.
-${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
-).slice(0,10000);
-const discovered=await discoverWanBackends();
-for(let segment=0;segment<segmentCount;segment++){
- let result;let lastError="";
- const segmentPrompt=`${basePrompt}\nSEGMENT ${segment+1} OF ${segmentCount}. This is a continuation of the same film. Preserve the reference identity, setting, wardrobe, object geometry and lighting. Start naturally from the previous segment ending state and make only the next planned beat move.`;
- const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
- if(localUrl){
-  try{
-   setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your personal Wan GPU…");
-   const form=new FormData();form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));form.append("director",JSON.stringify({scene:plan.category,subject:"subjects visible in the reference",action:plan.shots[segment]?.action||brief,camera:plan.shots[segment]?.camera||"slow cinematic push-in",preservation:"preserve identities, anatomy, objects, architecture, colors and readable text"}));
-   const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
-   const data=await response.json();
-   if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
-   if(!data.job_id)throw new Error("Configured GPU server returned no job id.");
-   for(let attempt=0;attempt<180;attempt++){await new Promise(r=>setTimeout(r,2000));const sr=await fetch(localUrl.replace(/\/$/,"")+"/jobs/"+data.job_id);if(!sr.ok)throw new Error("Could not read cloud GPU job status.");const st=await sr.json();if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);if(st.status==="completed"&&st.video_url){segmentUrls.push(new URL(st.video_url,localUrl).href);break;}if(st.status==="failed")throw new Error(st.message||"Cloud GPU generation failed.");}
-   if(segmentUrls.length===segment+1)continue;
-   throw new Error("Cloud GPU generation timed out.");
-  }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
- }
- const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
-for(let pi=0;pi<shuffledProviders.length;pi++){
-  const space=shuffledProviders[pi];
-  try{
-   setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
-   const response=await generateWithFreeSpace(space,blob,segmentPrompt,negative,segmentDuration);
-   result=response.result;
-   if(result)break;
-  }catch(providerError){
-   lastError=String(providerError?.message||providerError||"");
-   if(/ZeroGPU quota|quota exceeded|requested vs\.|remaining quota/i.test(lastError)){setStatus("Public AI GPU quota is unavailable. Switching to Mira Free Motion so the video still renders in your browser…");const fallbackVideo=await createFreeMotionFallback(preview,requestedDuration);setVideo(fallbackVideo);setJob({requestId:"mira-browser-motion-"+Date.now(),segments:1,mode:"browser-fallback"});setStatus("Free Motion video ready — unlimited browser rendering. Public Wan AI GPU quota was unavailable.");return;}
-   if(pi===shuffledProviders.length-1)throw new Error("No currently available public Wan Space could accept this image-to-video job. Mira checked "+shuffledProviders.length+" live candidates. Last error: "+lastError);
-  }
- }
- if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
- const found=extractVideoRef(result,space);if(!found)throw new Error("Wan 2.2 returned no usable video file for segment "+(segment+1)+". The backend responded without a recognizable video file.");segmentUrls.push(found);
-}
-setStatus("Assembling "+segmentUrls.length+" generated segment"+(segmentUrls.length===1?"":"s")+"…");
-const finalVideo=await stitchVideos(segmentUrls);
-setVideo(finalVideo);setJob({requestId:"mira-long-film-"+Date.now(),segments:segmentUrls.length});setStatus("AI film ready — "+requestedDuration+"s requested.");}catch(e){const message=String(e?.message||e||"Free Wan generation failed");setError(message);setStatus("");}finally{setBusy(false)}};return <div className="app"><header><div className="brand"><div className="logo">M</div><div><b>Mira Studio</b><span>AI Image-to-Scene Director</span></div></div><div className="provider"><span className="dot"/>Free Wan 2.2 • Live public GPU discovery • Reference Vision</div></header>
+};
+return <div className="app"><header><div className="brand"><div className="logo">M</div><div><b>Mira Studio</b><span>AI Image-to-Scene Director</span></div></div><div className="provider"><span className="dot"/>Free Wan 2.2 • Live public GPU discovery • Reference Vision</div></header>
  <main><section className="hero"><p className="eyebrow">MIRA DIRECTOR <span>V2</span></p><h1>From a single image to a directed scene.</h1><p className="sub">A professional image-to-video workflow: visual understanding → shot direction → generation → review. Mira keeps the reference image as the source of truth instead of forcing every scene into a generic ad.</p></section>
  <section className="workflow"><div className="step active"><b>01</b><span>Reference</span></div><div className="line"/><div className="step"><b>02</b><span>Director</span></div><div className="line"/><div className="step"><b>03</b><span>Generate</span></div><div className="line"/><div className="step"><b>04</b><span>Review</span></div></section>
  <section className="grid">
