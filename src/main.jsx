@@ -117,23 +117,69 @@ const buildPlan=async()=>{
  const checkLocalEngine=async()=>{const base=localEngineUrl.replace(/\/$/,"");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3500);try{const r=await fetch(base+"/health",{method:"GET",signal:controller.signal,mode:"cors"});if(!r.ok)throw new Error("Local GPU engine returned HTTP "+r.status);const data=await r.json();if(!data?.ready)throw new Error("Wan 2.2 local engine is reachable, but the model/checkpoint is not ready.");return data}finally{clearTimeout(timer)}};
  const discoverWanBackends=async()=>{
   const fallback=[
-    ["zerogpu-aoti/wan2-2-fp8da-aoti-faster",9],
-    ["observantdistressed/Wan2.2-14B-Fast-Preview",9],
-    ["kulkas2pintu/Wan2.2-14B-Preview",19],
-    ["r3gm/Wan2.2-14B-Preview",19],
-    ["Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step",9],
-    ["Rchoks/Wan2.2-14B-Fast-Preview",9]
+    "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
+    "observantdistressed/Wan2.2-14B-Fast-Preview",
+    "kulkas2pintu/Wan2.2-14B-Preview",
+    "r3gm/Wan2.2-14B-Preview",
+    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step",
+    "Rchoks/Wan2.2-14B-Fast-Preview"
   ];
   try{
     const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
-    if(!res.ok) return fallback;
+    if(!res.ok)return fallback;
     const data=await res.json();
-    const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?2/i.test(x.id||"")).map(x=>[x.id,9]);
-    const merged=[...live,...fallback];
-    return [...new Map(merged.map(x=>[x[0],x])).values()].slice(0,20);
+    const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?2/i.test(x.id||"")).map(x=>x.id);
+    return [...new Set([...live,...fallback])].slice(0,30);
   }catch{return fallback}
-};
-const stitchVideos=async(urls)=>{
+ };
+ const chooseVideoEndpoint=api=>{
+  const named=api?.named_endpoints||api?.namedEndpoints||{};
+  const entries=Object.entries(named);
+  const candidates=entries.filter(([name,ep])=>{
+   const text=(name+" "+JSON.stringify(ep)).toLowerCase();
+   return /generate.*video|image.*to.*video|i2v/.test(text);
+  });
+  return (candidates.find(([name,ep])=>/generate_video/i.test(name))||candidates[0]||entries.find(([name])=>/video/i.test(name))||null);
+ };
+ const buildGradioInputs=(endpoint,blob,prompt,negative,d)=>{
+  const params=endpoint?.parameters||endpoint?.inputs||[];
+  if(!Array.isArray(params)||!params.length)return null;
+  const values=params.map(p=>{
+   const label=String(p?.label||p?.parameter_name||p?.name||"").toLowerCase();
+   const type=String(p?.type||p?.component||"").toLowerCase();
+   if(/image|input.*image|start.*image|reference/.test(label)||/image|file/.test(type))return handle_file(blob);
+   if(/negative|neg.?prompt/.test(label))return negative;
+   if(/prompt|caption|description|text/.test(label))return prompt;
+   if(/duration|seconds|length/.test(label))return Math.min(Number(d)||3.5,5);
+   if(/frame|frames/.test(label))return Math.max(17,Math.min(81,Math.round((Number(d)||3.5)*16)+1));
+   if(/step|steps/.test(label))return 8;
+   if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
+   if(/guidance|cfg/.test(label))return 5;
+   if(/fps|frame.?rate/.test(label))return 16;
+   if(/height/.test(label))return aspect==="9:16"?1280:540;
+   if(/width/.test(label))return aspect==="9:16"?720:960;
+   if(p?.default!==undefined&&p?.default!==null)return p.default;
+   if(/bool|checkbox|enable/.test(type))return false;
+   if(/number|slider/.test(type))return 1;
+   return null;
+  });
+  const required=params.filter(p=>p?.optional===false||p?.required===true);
+  if(values.length!==params.length)return null;
+  if(required.some((p,i)=>values[i]===null||values[i]===undefined))return null;
+  return values;
+ };
+ const generateWithFreeSpace=async(space,blob,prompt,negative,d)=>{
+  const client=await Client.connect(space);
+  const api=await client.view_api();
+  const selected=chooseVideoEndpoint(api);
+  if(!selected)throw new Error("No compatible image-to-video endpoint exposed by this Space.");
+  const [endpoint,definition]=selected;
+  const args=buildGradioInputs(definition,blob,prompt,negative,d);
+  if(!args)throw new Error("Space API schema could not be mapped safely.");
+  const result=await client.predict(endpoint,args);
+  return {result,space,endpoint};
+ };
+ const stitchVideos=async(urls)=>{
   if(urls.length===1)return urls[0];
   const videos=[];
   for(const url of urls){const v=document.createElement("video");v.crossOrigin="anonymous";v.muted=true;v.playsInline=true;v.src=url;await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(new Error("Could not load one generated segment for stitching."));});videos.push(v);}
@@ -164,11 +210,18 @@ for(let segment=0;segment<segmentCount;segment++){
    throw new Error("Cloud GPU generation timed out.");
   }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
  }
- const shuffledProviders=[...providers].sort(()=>Math.random()-.5);
+ const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
 for(let pi=0;pi<shuffledProviders.length;pi++){
-  const provider=shuffledProviders[pi];
-  try{setStatus("Scanning free Wan GPU pool: "+(pi+1)+"/"+shuffledProviders.length+" — "+provider.name+"…");const client=await Client.connect(provider.space);result=await client.predict("/generate_video",provider.args(blob,segmentPrompt,negative,segmentDuration));if(result)break;}
-  catch(providerError){lastError=String(providerError?.message||providerError||"");const quota=/zerogpu|quota|runs limit|exceeded.*limit|authenticate.*token|401|unauthorized/i.test(lastError);if(pi===shuffledProviders.length-1){if(quota)throw new Error("All discovered free public Wan GPU queues are currently unavailable or quota-limited. Mira tried "+shuffledProviders.length+" online backends automatically.");throw providerError;}}
+  const space=shuffledProviders[pi];
+  try{
+   setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
+   const response=await generateWithFreeSpace(space,blob,segmentPrompt,negative,segmentDuration);
+   result=response.result;
+   if(result)break;
+  }catch(providerError){
+   lastError=String(providerError?.message||providerError||"");
+   if(pi===shuffledProviders.length-1)throw new Error("No currently available public Wan Space could accept this image-to-video job. Mira checked "+shuffledProviders.length+" live candidates. Last error: "+lastError);
+  }
  }
  if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
  const values=result?.data||result;let raw=Array.isArray(values)?values[0]:values;let found=raw?.video?.url||raw?.video?.path||raw?.url||raw?.path||raw?.data?.url||raw?.data?.path||"";
