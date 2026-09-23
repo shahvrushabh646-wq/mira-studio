@@ -103,7 +103,34 @@ export default async function handler(req, res) {
         "watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
     };
 
-    const queued = await fal.queue.submit(MODEL, { input });
+    let queued;
+    try {
+      queued = await fal.queue.submit(MODEL, { input });
+    } catch (firstError) {
+      const status = Number(firstError?.status || firstError?.statusCode);
+      const fallbackPrompt = selectedShots
+        .map((shot, i) => `Shot ${i + 1}: ${shot.action} Camera: ${shot.camera}.`)
+        .join(" ");
+      const fallbackInput = {
+        start_image_url: imageUrl,
+        prompt:
+          `Create a continuous premium product commercial. ${fallbackPrompt} ${brief || ""} ` +
+          `Preserve exact product identity, packaging, proportions, materials and visible text. ` +
+          `Photorealistic, ${style || "premium commercial"} visual language, ${motion || "cinematic"} camera movement. ` +
+          "Premium advertising cinematography, physically plausible motion, stable geometry, no invented logos.",
+        duration: String(requestedDuration),
+        generate_audio: false,
+        negative_prompt:
+          negativePrompt ||
+          "warped product, deformed packaging, duplicate product, invented logo, fake text, watermark, distorted hands, melting, morphing, flicker, jitter, low quality"
+      };
+
+      if (status === 422) {
+        queued = await fal.queue.submit(MODEL, { input: fallbackInput });
+      } else {
+        throw firstError;
+      }
+    }
 
     if (!queued?.request_id) {
       throw new Error("fal.ai did not return a request ID.");
