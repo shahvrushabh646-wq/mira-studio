@@ -128,9 +128,13 @@ const buildPlan=async()=>{
 };
 const generate=async()=>{if(!file||!plan)return;setBusy(true);setError("");setVideo("");try{setStatus("Preparing reference image…");const imageData=await makePreparedData();const blob=await(await fetch(imageData)).blob();const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
 const requestedDuration=Number(duration)||3.5;const segmentDuration=Math.min(requestedDuration,3.5);const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));const segmentUrls=[];const basePrompt=("FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Do not treat it as a generic reference. Reconstruct and animate the exact scene described by the visual director analysis. VISUAL DIRECTOR SHEET:\n"+(visualAnalysis||plan.reference||"Preserve the visible scene faithfully.")+"\nUSER CREATIVE PROMPT / BRIEF:\n"+brief+"\nDIRECTOR SHOT PLAN:\n"+shotDirection+"\nFor every beat, follow the described subject action, camera angle, camera height, framing, lens perspective, lighting, environment motion and timing. The user brief controls the creative intent, while the image and director sheet control what is physically present. If the user asks for an action that conflicts with the visible image, adapt it to the closest physically plausible version using the visible subjects and environment. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity between beats. Use natural acceleration/deceleration, realistic depth and physically plausible interaction. Never add unrelated people/objects, invent text, morph subjects, or turn the scene into a product advertisement unless the image and user brief explicitly support that. "+selectedMotionText(style,motion,intensity)+" NEGATIVE CONSTRAINTS: "+negative).slice(0,10000);const providers=[
- {name:"Wan 2.2 Fast Official",space:"zerogpu-aoti/wan2-2-fp8da-aoti-faster",args:(b,p,n,d)=>[handle_file(b),p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true]},
- {name:"Wan 2.2 Community Fast",space:"r3gm/wan2-2-fp8da-aoti-preview2",args:(b,p,n,d)=>[handle_file(b),null,p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,"4x-UltraSharp",1,true,false,true]},
- {name:"Wan 2.2 Community Backup",space:"kulkas2pintu/wan555",args:(b,p,n,d)=>[handle_file(b),null,p,4,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,true,true]}
+ {name:"Wan Fast • zerogpu-aoti",space:"zerogpu-aoti/wan2-2-fp8da-aoti-faster",args:(b,p,n,d)=>[handle_file(b),p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true]},
+ {name:"Wan Preview • kulkas2pintu",space:"kulkas2pintu/wan2-2-fp8da-aoti-preview2",args:(b,p,n,d)=>[handle_file(b),null,p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,"4x-UltraSharp",1,true,false,true]},
+ {name:"Wan Preview • r3gm",space:"r3gm/wan2-2-fp8da-aoti-preview2",args:(b,p,n,d)=>[handle_file(b),null,p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,"4x-UltraSharp",1,true,false,true]},
+ {name:"Wan Lightning • Saravutw",space:"Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom",args:(b,p,n,d)=>[handle_file(b),p,8,n,Math.min(Number(d)||3.5,3.5),5,5,Math.floor(Math.random()*2147483647),true]},
+ {name:"Wan Lightning • vml12",space:"vml12/Wan2.2_I2V_14B_Lightning_Fast_Preview",args:(b,p,n,d)=>[handle_file(b),p,8,n,Math.min(Number(d)||3.5,3.5),5,5,Math.floor(Math.random()*2147483647),true]},
+ {name:"Wan Motion • Dream",space:"dream2589632147/Dream-wan2-2-fp8da-aoti-preview-2",args:(b,p,n,d)=>[handle_file(b),null,p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,"4x-UltraSharp",1,true,false,true]},
+ {name:"Wan Fast Preview • cbensimon",space:"cbensimon/Wan2.2-14B-Fast-Preview",args:(b,p,n,d)=>[handle_file(b),null,p,6,n,Math.min(Number(d)||3.5,3.5),1,1,Math.floor(Math.random()*2147483647),true,6,"UniPCMultistep",3,16,"4x-UltraSharp",1,true,false,true]}
 ];
 for(let segment=0;segment<segmentCount;segment++){
  let result;let lastError="";
@@ -149,10 +153,11 @@ for(let segment=0;segment<segmentCount;segment++){
    throw new Error("Cloud GPU generation timed out.");
   }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
  }
- for(let pi=0;pi<providers.length;pi++){
-  const provider=providers[pi];
-  try{setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" — "+provider.name+"…");const client=await Client.connect(provider.space);result=await client.predict("/generate_video",provider.args(blob,segmentPrompt,negative,segmentDuration));if(result)break;}
-  catch(providerError){lastError=String(providerError?.message||providerError||"");const quota=/zerogpu|quota|runs limit|exceeded.*limit|authenticate.*token|401|unauthorized/i.test(lastError);if(pi===providers.length-1){if(quota)throw new Error("Free public GPU quota/queue is exhausted while generating segment "+(segment+1)+" of "+segmentCount+". The long-film architecture is ready, but cloud compute still depends on the provider.");throw providerError;}}
+ const shuffledProviders=[...providers].sort(()=>Math.random()-.5);
+for(let pi=0;pi<shuffledProviders.length;pi++){
+  const provider=shuffledProviders[pi];
+  try{setStatus("Trying online GPU "+(pi+1)+"/"+shuffledProviders.length+" — "+provider.name+"…");const client=await Client.connect(provider.space);result=await client.predict("/generate_video",provider.args(blob,segmentPrompt,negative,segmentDuration));if(result)break;}
+  catch(providerError){lastError=String(providerError?.message||providerError||"");const quota=/zerogpu|quota|runs limit|exceeded.*limit|authenticate.*token|401|unauthorized/i.test(lastError);if(pi===shuffledProviders.length-1){if(quota)throw new Error("All discovered free public Wan GPU queues are currently unavailable or quota-limited. Mira tried "+shuffledProviders.length+" online backends automatically.");throw providerError;}}
  }
  if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
  const values=result?.data||result;let raw=Array.isArray(values)?values[0]:values;let found=raw?.video?.url||raw?.video?.path||raw?.url||raw?.path||raw?.data?.url||raw?.data?.path||"";
