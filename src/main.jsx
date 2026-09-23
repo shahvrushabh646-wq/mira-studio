@@ -121,14 +121,16 @@ const buildPlan=async()=>{
     "r3gm/wan2-2-fp8da-aoti-preview2",
     "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
     "observantdistressed/Wan2.2-14B-Fast-Preview",
-    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step"
+    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step",
+    "multimodalart/Wan2.1-Fast",
+    "linoyts/Wan2.2-14B-rCM-Fast"
   ];
   try{
     const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
     if(!res.ok)return fallback;
     const data=await res.json();
-    const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?2/i.test(x.id||"")).map(x=>x.id);
-    return [...new Set([...live,...fallback])].slice(0,30);
+    const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?[12](?:[. -]?(?:1|2))?/i.test((x.id||"")+" "+(x.cardData?.title||""))).map(x=>x.id);
+    return [...new Set([...live,...fallback])].slice(0,20);
   }catch{return fallback}
  };
  const chooseVideoEndpoint=api=>{
@@ -228,6 +230,7 @@ for(let pi=0;pi<shuffledProviders.length;pi++){
    if(result)break;
   }catch(providerError){
    lastError=String(providerError?.message||providerError||"");
+   if(/ZeroGPU quota|quota exceeded|requested vs\.|remaining quota/i.test(lastError)){throw new Error("Free GPU quota is currently exhausted for the available Wan Spaces. Mira stopped retrying instead of wasting attempts. "+lastError+" Try a shorter 3.5s generation after the quota resets, or connect your own Hugging Face account/token for its available quota.");}
    if(pi===shuffledProviders.length-1)throw new Error("No currently available public Wan Space could accept this image-to-video job. Mira checked "+shuffledProviders.length+" live candidates. Last error: "+lastError);
   }
  }
