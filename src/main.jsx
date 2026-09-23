@@ -240,7 +240,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
      form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
      form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));
      form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
-     const response=await fetch(localUrl.replace(\/\$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
+     const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
      if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
      const data=await response.json();
      if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
@@ -248,7 +248,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
      let completed=false;
      for(let attempt=0;attempt<180;attempt++){
       await new Promise(r=>setTimeout(r,2000));
-      const sr=await fetch(localUrl.replace(\/\$/,"")+"/jobs/"+data.job_id);
+      const sr=await fetch(localUrl.replace(/\/$/,"")+"/jobs/"+data.job_id);
       if(!sr.ok)throw new Error("Could not read cloud GPU job status.");
       const st=await sr.json();
       if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
