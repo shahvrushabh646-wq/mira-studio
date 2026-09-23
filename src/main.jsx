@@ -60,9 +60,12 @@ function detectCategory(text=""){
 function makeDirectorShots(analysis,brief,duration){
  const category=detectCategory((analysis||"")+" "+(brief||""));
  const template=storyTemplates[category]||storyTemplates.generic;
- const count=Math.min(6,Math.max(1,Math.ceil((Number(duration)||3.5)/3.5)));
- const base=Math.floor(duration/count),rem=duration%count;
- return template.slice(0,count).map((s,i)=>({name:s[0],action:s[1],camera:s[2],duration:base+(i<rem?1:0)}));
+ const count=Math.max(1,Math.min(20,Math.ceil((Number(duration)||3.5)/3.5)));
+ const base=(Number(duration)||3.5)/count;
+ return Array.from({length:count},(_,i)=>{
+  const t=template[i%template.length],cycle=Math.floor(i/template.length);
+  return {name:cycle?t[0]+" "+(cycle+1):t[0],action:t[1],camera:t[2],duration:Math.round(base*100)/100};
+ });
 }
 
 const baseShots=storyTemplates.generic.map(s=>({name:s[0],action:s[1],camera:s[2]}));
@@ -230,7 +233,8 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
 
   for(let segment=0;segment<segmentCount;segment++){
    let result=null,lastError="";
-   const segmentPrompt=`${basePrompt}\nSEGMENT ${segment+1} OF ${segmentCount}. Continue naturally from the reference and preserve the same scene, identities, wardrobe, objects and lighting.`;
+   const activeShot=plan?.shots?.[segment]||plan?.shots?.[segment%Math.max(1,plan?.shots?.length||1)];
+   const segmentPrompt=basePrompt+"\nACTIVE SHOT ONLY: "+(activeShot?.name||"Primary action")+"\nACTION: "+(activeShot?.action||brief)+"\nCAMERA: "+(activeShot?.camera||"slow cinematic push-in")+"\nSEGMENT "+(segment+1)+" OF "+segmentCount+". Generate ONLY this shot. Continue naturally from the previous segment while preserving the same scene, identities, wardrobe, objects and lighting.";
    const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
 
    if(localUrl){
