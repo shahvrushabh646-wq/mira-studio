@@ -1,141 +1,84 @@
-import os
-import sys
-import uuid
-import asyncio
-import subprocess
+import json,threading,uuid
 from pathlib import Path
-from typing import Dict
-
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI,Depends,File,Form,HTTPException,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+import config
+from auth import require_api_key
+from gpu_manager import gpu_manager
+from model_manager import model_manager
+from queue_manager import queue_manager,public_job
+from image_io import load_image,preprocess,save_jpeg,ImageValidationError
+from storage import cleanup,video_path
+from video_generator import process_job
+from schemas import JOB_QUEUED
 
-ROOT = Path(__file__).resolve().parent
-WAN_DIR = Path(os.getenv("WAN_DIR", str(ROOT / "Wan2.2")))
-CKPT_DIR = Path(os.getenv("WAN_CKPT_DIR", str(ROOT / "Wan2.2-TI2V-5B")))
-OUTPUT_DIR = ROOT / "outputs"
-INPUT_DIR = ROOT / "inputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
-INPUT_DIR.mkdir(exist_ok=True)
+app=FastAPI(title="Mira Personal GPU API",version="3.0.0")
+app.add_middleware(CORSMiddleware,allow_origins=config.FRONTEND_URLS,allow_credentials=True,allow_methods=["GET","POST","OPTIONS"],allow_headers=["*"])
 
-app = FastAPI(title="Mira Local Video Engine", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def worker():
+    while True:
+        job=queue_manager.take(2)
+        if not job:continue
+        try:process_job(job)
+        except Exception as e:queue_manager.update(job["job_id"],status="FAILED",message="Worker error.",error=str(e))
+        finally:queue_manager.done(job["job_id"]);cleanup()
 
-jobs: Dict[str, dict] = {}
-
-class JobResponse(BaseModel):
-    job_id: str
-
-def _safe_size(aspect: str) -> str:
-    return "704*1280" if aspect == "9:16" else "1280*704"
-
-async def run_wan(job_id: str, image_path: Path, prompt: str, aspect: str, steps: int, duration: int):
-    output_path = OUTPUT_DIR / f"{job_id}.mp4"
-    jobs[job_id] = {"status": "running", "progress": 0, "message": "Loading Wan 2.2…"}
-    cmd = [
-        sys.executable,
-        str(WAN_DIR / "generate.py"),
-        "--task", "ti2v-5B",
-        "--size", _safe_size(aspect),
-        "--ckpt_dir", str(CKPT_DIR),
-        "--offload_model", "True",
-        "--convert_model_dtype",
-        "--t5_cpu",
-        "--image", str(image_path),
-        "--prompt", prompt[:7000],
-        "--sample_steps", str(max(4, min(int(steps), 50))),
-        "--frame_num", str(max(49, min(int(duration * 24) + 1, 121))),
-        "--save_file", str(output_path),
-    ]
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(WAN_DIR),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        lines = []
-        while True:
-            raw = await process.stdout.readline()
-            if not raw:
-                break
-            line = raw.decode("utf-8", errors="replace").strip()
-            if line:
-                lines.append(line)
-                if "%" in line:
-                    jobs[job_id]["message"] = line[-180:]
-        code = await process.wait()
-        if code != 0 or not output_path.exists():
-            tail = "\n".join(lines[-12:])
-            raise RuntimeError(f"Wan exited with code {code}.\n{tail}")
-        jobs[job_id] = {
-            "status": "completed",
-            "progress": 100,
-            "message": "Video ready.",
-            "video_url": f"/videos/{output_path.name}",
-        }
-    except Exception as exc:
-        jobs[job_id] = {"status": "failed", "progress": 0, "message": str(exc)}
-    finally:
-        try:
-            image_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+@app.on_event("startup")
+def startup():
+    gpu_manager.initialize();model_manager.warmup()
+    for _ in range(config.MAX_CONCURRENT_JOBS):threading.Thread(target=worker,daemon=True).start()
+    cleanup()
 
 @app.get("/health")
 def health():
-    return {
-        "ok": True,
-        "engine": "Wan2.2 TI2V-5B",
-        "unlimited": True,
-        "gpu_required": True,
-        "checkpoint": str(CKPT_DIR),
-        "ready": (WAN_DIR / "generate.py").exists() and CKPT_DIR.exists(),
-    }
+    g=gpu_manager.status();m=model_manager.active();q=queue_manager.snapshot()
+    return {"status":"ready" if g["available"] and m["loaded"] else "MODEL_NOT_READY","gpu":g["available"],"gpu_name":g["name"],"vram_gb":g["vram_gb"],"cuda":g["cuda"],"pytorch":g["pytorch"],"model":m["name"],"ready":bool(g["available"] and m["loaded"]),"detail":g,"model_info":m,"queue":q}
 
-@app.post("/generate", response_model=JobResponse)
-async def generate(
-    image: UploadFile = File(...),
-    prompt: str = Form(...),
-    aspect: str = Form("9:16"),
-    steps: int = Form(20),
-    duration: int = Form(5),
-):
-    if not (WAN_DIR / "generate.py").exists():
-        raise HTTPException(500, "Wan2.2 is not installed. Follow local-engine/README.md.")
-    if not CKPT_DIR.exists():
-        raise HTTPException(500, "Wan2.2-TI2V-5B checkpoint is missing. Follow local-engine/README.md.")
-    if image.content_type and not image.content_type.startswith("image/"):
-        raise HTTPException(400, "Please upload an image file.")
-    job_id = uuid.uuid4().hex
-    suffix = Path(image.filename or "reference.jpg").suffix.lower() or ".jpg"
-    image_path = INPUT_DIR / f"{job_id}{suffix}"
-    image_path.write_bytes(await image.read())
-    asyncio.create_task(run_wan(job_id, image_path, prompt, aspect, steps, max(2, min(int(duration), 5))))
-    jobs[job_id] = {"status": "queued", "progress": 0, "message": "Queued on your GPU."}
-    return {"job_id": job_id}
+@app.get("/gpu")
+def gpu():return {"gpu":gpu_manager.status(),"model":model_manager.active(),"queue":queue_manager.snapshot(),"personal":True,"private":config.PRIVATE_MODE}
+
+@app.get("/models")
+def models():return {"models":model_manager.list_models(),"active":model_manager.active()}
+
+@app.post("/generate",dependencies=[Depends(require_api_key)])
+async def generate(image:UploadFile=File(...),prompt:str=Form(""),negative_prompt:str=Form(""),duration:float=Form(4),width:int=Form(0),height:int=Form(0),fps:int=Form(16),steps:int=Form(0),seed:int=Form(0),motion_strength:float=Form(.45),start_frame:UploadFile|None=File(None),end_frame:UploadFile|None=File(None),shots:str=Form(""),director:str=Form(""),model:str=Form(""),guidance:float=Form(1.0)):
+    try:im=load_image(await image.read(),image.filename or "reference.jpg")
+    except ImageValidationError as e:raise HTTPException(400,str(e))
+    if start_frame and start_frame.filename:
+        try:im=load_image(await start_frame.read(),start_frame.filename)
+        except Exception:pass
+    im=preprocess(im,width or im.width,height or im.height);jid=uuid.uuid4().hex;path=config.INPUT_DIR/f"{jid}.jpg";save_jpeg(im,path)
+    shot_list=[]
+    if shots:
+        try:shot_list=json.loads(shots)
+        except Exception:shot_list=[]
+    payload={"image_path":str(path),"prompt":prompt,"negative_prompt":negative_prompt,"duration":duration,"width":im.width,"height":im.height,"fps":fps,"steps":steps,"seed":seed,"motion_strength":motion_strength,"shots":shot_list,"director":director,"model_name":model or None,"guidance":guidance,"shot_total":len(shot_list) or 1}
+    j=queue_manager.enqueue(payload);return {"job_id":j["job_id"],"status":JOB_QUEUED}
 
 @app.get("/jobs/{job_id}")
-def job_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(404, "Unknown job.")
-    return jobs[job_id]
+def job(job_id):
+    j=queue_manager.get(job_id)
+    if not j:raise HTTPException(404,"Unknown job.")
+    return public_job(j)
+
+@app.post("/cancel/{job_id}",dependencies=[Depends(require_api_key)])
+def cancel(job_id):
+    try:return public_job(queue_manager.cancel(job_id))
+    except KeyError:raise HTTPException(404,"Unknown job.")
 
 @app.get("/videos/{filename}")
-def video(filename: str):
-    safe = Path(filename).name
-    path = OUTPUT_DIR / safe
-    if not path.exists():
-        raise HTTPException(404, "Video not found.")
-    return FileResponse(path, media_type="video/mp4", filename=safe)
+def video(filename):
+    try:p=video_path(filename)
+    except ValueError:raise HTTPException(400,"Invalid filename.")
+    if not p.exists():raise HTTPException(404,"Video not found.")
+    return FileResponse(p,media_type="video/mp4",filename=p.name)
+
+@app.post("/cleanup",dependencies=[Depends(require_api_key)])
+def clean():gpu_manager.clear_cache();return {"ok":True,**cleanup()}
 
 @app.get("/")
-def root():
-    return {"name": "Mira Local Video Engine", "engine": "Wan2.2 TI2V-5B", "unlimited": True}
+def root():return {"name":"Mira Personal GPU API","gpu":gpu_manager.status(),"model":model_manager.active(),"queue":queue_manager.snapshot()}
+
+if __name__=="__main__":
+ import uvicorn;uvicorn.run(app,host=config.HOST,port=config.PORT)
