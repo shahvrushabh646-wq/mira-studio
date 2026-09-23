@@ -81,19 +81,19 @@ function App(){
  const vision=await Client.connect("developer0hye/Qwen2.5-VL-7B-Instruct");
  const prompt=`Act as a visual scene director. Study this exact image carefully before generating anything. Identify the scene type, every important visible person, object, animal, vehicle, structure, text/sign, clothing, pose, spatial relationships, background, lighting, colors, camera angle and distinctive details. For people, describe their visible pose and what action the scene naturally suggests. For classroom/lecture images, identify teacher, students, board/books/desks and the teaching activity visible. For events, identify the central activity and crowd/environment. For nature, identify the main subject and environmental motion. Read clearly visible wording but never invent missing text. Separate visible facts from uncertainty.
 
-Return a structured, detailed DIRECTOR REFERENCE SHEET for an image-to-video model. Do not be generic. Include:
+Return a structured, detailed DIRECTOR REFERENCE SHEET for an image-to-video model. Include:
 1. SCENE — exact scene type, location/setting, time/atmosphere and what is visibly happening.
-2. SUBJECTS — every important person/animal/object, approximate position in frame, pose, orientation, gaze, clothing/materials and distinguishing visible details.
-3. ACTION — what each visible subject is doing now, what natural next movement logically follows, and what must remain still.
+2. SUBJECTS — every important person/animal/object, position in frame, pose, orientation, gaze, clothing/materials and distinguishing details.
+3. ACTION — what each visible subject is doing now, the natural next movement, and what must remain still.
 4. COMPOSITION — foreground/midground/background, framing, subject placement, negative space, perspective, depth and visual hierarchy.
 5. CAMERA — current apparent camera angle, lens/perspective feel, shot size, camera height, and 2-4 camera movements that fit this exact image. State which movement should be used first and why.
 6. LIGHTING — direction, softness, highlights, shadows, color temperature and realistic changes during motion.
 7. ENVIRONMENTAL MOTION — only visible/supportable motion such as hair, clothing, leaves, water, smoke, lights, crowd movement, vehicles or classroom activity.
-8. CINEMATIC BEATS — propose a short sequence of distinct beats/shots. For every beat specify SUBJECT ACTION + CAMERA ANGLE/MOVEMENT + FRAMING + approximate timing + transition/continuity.
+8. CINEMATIC BEATS — propose distinct beats/shots. For every beat specify SUBJECT ACTION + CAMERA ANGLE/MOVEMENT + FRAMING + approximate timing + transition/continuity.
 9. PRESERVATION — identities, faces, body proportions, object shapes, logos, signs, readable text, colors, architecture and spatial relationships that must not change.
-10. AVOID — movements, objects, people, text or events that are not supported by the image.
+10. AVOID — movements, objects, people, text or events not supported by the image.
 
-For each proposed action and camera choice, explain it from visible evidence in the image. If something cannot be established, explicitly mark it as uncertain instead of inventing it. Do not turn every image into a product advertisement.`;
+For every proposed action and camera choice, explain it from visible evidence. If something cannot be established, mark it as uncertain instead of inventing it. Do not turn every image into a product advertisement.`;
  const r=await vision.predict([handle_file(blob),prompt],"/qwen_vl_inference");
  return String(r?.data?.[0]||"").slice(0,7000);
 };
