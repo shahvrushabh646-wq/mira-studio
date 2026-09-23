@@ -1,6 +1,6 @@
 import { fal } from "@fal-ai/client";
 
-const MODEL="fal-ai/wan-i2v";
+const MODEL="fal-ai/wan/v2.2-a14b/image-to-video/turbo";
 
 export default async function handler(req,res){
  if(!process.env.FAL_KEY) return res.status(500).json({error:"FAL_KEY is not configured."});
