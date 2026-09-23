@@ -60,7 +60,7 @@ function detectCategory(text=""){
 function makeDirectorShots(analysis,brief,duration){
  const category=detectCategory((analysis||"")+" "+(brief||""));
  const template=storyTemplates[category]||storyTemplates.generic;
- const count=Math.min(6,Math.max(1,Math.floor(Number(duration)||5)));
+ const count=Math.min(6,Math.max(1,Math.ceil((Number(duration)||3.5)/3.5)));
  const base=Math.floor(duration/count),rem=duration%count;
  return template.slice(0,count).map((s,i)=>({name:s[0],action:s[1],camera:s[2],duration:base+(i<rem?1:0)}));
 }
@@ -148,10 +148,10 @@ const buildPlan=async()=>{
    const type=String(p?.type||p?.component||"").toLowerCase();
    // Optional "Last Image" must be null; sending the reference image here changes the model's conditioning.
    if(/last image|optional.*image|end image|last frame/.test(label))return null;
-   if(/input image|reference image|start image|image to animate|source image/.test(label))return handle_file(blob);
+   if(/input image|reference image|start image|image to animate|source image|input.*img|image upload|upload image|^image$/.test(label)||(/image|filepath|file/.test(type)&&!/negative|last|end/.test(label)))return handle_file(blob);
    if(/negative|neg.?prompt/.test(label))return negative;
    if(label==="prompt"||/^prompt\b/.test(label)||/caption|description/.test(label))return prompt;
-   if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,5);
+   if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,3.5);
    if(/frame|frames|num frames/.test(label))return Math.max(17,Math.min(81,Math.round((Number(d)||3.5)*16)+1));
    if(/step|steps|inference/.test(label))return 6;
    if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
@@ -187,6 +187,7 @@ const buildPlan=async()=>{
   const result=await client.predict(endpoint,args);
   return {result,space,endpoint};
  };
+ const extractVideoRef=(result,space)=>{const seen=new Set();const walk=v=>{if(!v)return "";if(typeof v==="string"){if(/^https?:\/\//.test(v)||v.startsWith("data:"))return v;if(/\.mp4(?:\?|$)|\.webm(?:\?|$)|^\/gradio_api\/file=/.test(v))return v}if(typeof v==="object"){if(seen.has(v))return "";seen.add(v);for(const k of ["url","path","video","data","value"]){const hit=walk(v[k]);if(hit)return hit}if(Array.isArray(v)){for(const item of v){const hit=walk(item);if(hit)return hit}}}return ""};const found=walk(result?.data??result);if(!found)return "";if(/^https?:\/\//.test(found)||found.startsWith("data:"))return found;if(found.startsWith("/gradio_api/file="))return "https://huggingface.co/spaces/"+space+found;return "https://huggingface.co/spaces/"+space+"/file="+found.replace(/^\/+/, "")};
  const stitchVideos=async(urls)=>{
   if(urls.length===1)return urls[0];
   const videos=[];
@@ -231,10 +232,7 @@ for(let pi=0;pi<shuffledProviders.length;pi++){
   }
  }
  if(!result)throw new Error(lastError||"No GPU backend returned a segment.");
- const values=result?.data||result;let raw=Array.isArray(values)?values[0]:values;let found=raw?.video?.url||raw?.video?.path||raw?.url||raw?.path||raw?.data?.url||raw?.data?.path||"";
- if(!found&&Array.isArray(values)){for(const v of values){if(typeof v==="string"&&/^https?:\/\//.test(v)){found=v;break}if(v?.url){found=v.url;break}}}
- if(!found)throw new Error("Wan 2.2 returned no video for segment "+(segment+1)+".");
- segmentUrls.push(found);
+ const found=extractVideoRef(result,space);if(!found)throw new Error("Wan 2.2 returned no usable video file for segment "+(segment+1)+". The backend responded without a recognizable video file.");segmentUrls.push(found);
 }
 setStatus("Assembling "+segmentUrls.length+" generated segment"+(segmentUrls.length===1?"":"s")+"…");
 const finalVideo=await stitchVideos(segmentUrls);
