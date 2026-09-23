@@ -203,7 +203,6 @@ const buildPlan=async()=>{
   for(const v of videos){await new Promise(async(resolve,reject)=>{v.currentTime=0;v.onended=resolve;v.onerror=()=>reject(new Error("Segment playback failed."));try{await v.play();}catch(e){reject(e);return;}const draw=()=>{if(v.ended)return;const ctx=canvas.getContext("2d");ctx.drawImage(v,0,0,canvas.width,canvas.height);requestAnimationFrame(draw)};draw();});}
   recorder.stop();await done;const blob=new Blob(chunks,{type:"video/webm"});return URL.createObjectURL(blob);
 };
-const createFreeMotionFallback=async(imageUrl,totalDuration)=>{const response=await fetch(imageUrl);if(!response.ok)throw new Error("Could not load the reference image for free fallback mode.");const imageBlob=await response.blob();const img=new Image();img.src=URL.createObjectURL(imageBlob);await new Promise((res,rej)=>{img.onload=res;img.onerror=rej});const w=aspect==="9:16"?720:960,h=aspect==="9:16"?1280:540;const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");const stream=canvas.captureStream(30);const chunks=[];const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";const recorder=new MediaRecorder(stream,{mimeType:mime});recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);const done=new Promise(r=>recorder.onstop=r);recorder.start();const start=performance.now();const ms=Math.max(3500,Number(totalDuration)*1000);const draw=now=>{const p=Math.min(1,(now-start)/ms);const phase=p*Math.PI*2;const zoom=1.02+0.045*(0.5-0.5*Math.cos(phase));const panX=Math.sin(phase*0.65)*w*0.018;const panY=Math.cos(phase*0.55)*h*0.012;const scale=Math.max(w/img.width,h/img.height)*zoom;const dw=img.width*scale,dh=img.height*scale;ctx.fillStyle="#09090b";ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2+panX,h/2+panY);ctx.rotate(Math.sin(phase*0.5)*0.0025);ctx.drawImage(img,-dw/2,-dh/2,dw,dh);ctx.restore();if(p<1)requestAnimationFrame(draw);else recorder.stop()};requestAnimationFrame(draw);await done;URL.revokeObjectURL(img.src);return URL.createObjectURL(new Blob(chunks,{type:mime}))};
 const generate=async()=>{
  if(!file||!plan)return;
  setBusy(true);setError("");setVideo("");
@@ -231,7 +230,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
 
   for(let segment=0;segment<segmentCount;segment++){
    let result=null,lastError="";
-   const segmentPrompt=`${basePrompt}\\nSEGMENT ${segment+1} OF ${segmentCount}. Continue naturally from the reference and preserve the same scene, identities, wardrobe, objects and lighting.`;
+   const segmentPrompt=`${basePrompt}\nSEGMENT ${segment+1} OF ${segmentCount}. Continue naturally from the reference and preserve the same scene, identities, wardrobe, objects and lighting.`;
    const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
 
    if(localUrl){
@@ -241,7 +240,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
      form.append("image",blob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
      form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));
      form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
-     const response=await fetch(localUrl.replace(/\\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
+     const response=await fetch(localUrl.replace(\/\$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
      if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
      const data=await response.json();
      if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
@@ -249,7 +248,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
      let completed=false;
      for(let attempt=0;attempt<180;attempt++){
       await new Promise(r=>setTimeout(r,2000));
-      const sr=await fetch(localUrl.replace(/\\/$/,"")+"/jobs/"+data.job_id);
+      const sr=await fetch(localUrl.replace(\/\$/,"")+"/jobs/"+data.job_id);
       if(!sr.ok)throw new Error("Could not read cloud GPU job status.");
       const st=await sr.json();
       if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
