@@ -1,21 +1,20 @@
 # Mira Studio
 
-Mira Studio opens in **Free Motion** mode. Turn a still image into a short camera-motion video directly in your browser. No GPU server, account, API key, or image upload is needed.
+Mira Studio turns a reference image into an AI-directed video. It opens in **Free AI video** mode with the **Active classroom lesson** scene format selected.
 
-## Free Motion mode
+## Free AI video
 
-- Choose an image and write a creative direction.
-- Choose vertical or landscape format, camera style, intensity, and a 4, 7, or 15 second duration.
-- Create a local shot plan and render the motion film in the browser.
-- Preview and save the result as WebM.
+1. Upload an image, such as an instructor or education poster.
+2. Keep **Active classroom lesson** selected to stage the visible instructor as a teacher with students and a board, or choose **Animate the uploaded scene** to preserve the existing scene.
+3. Set the creative direction and choose a short 4–5 second clip.
+4. Build the director plan, review it, then select **Generate real AI video**.
 
-This mode moves the camera over the still image. It does not invent motion inside people or objects. Your image stays on the page while rendering.
+Video generation calls a public Hugging Face Wan 2.2 ZeroGPU Space directly from the browser. It requires no Mira account, key, or GPU setup. The image is uploaded to Hugging Face for analysis/generation. The public service has a daily GPU quota and shared queues; access may be busy or unavailable, so usage is not unlimited. Generated clips are silent and about five seconds long.
 
-## AI video mode (optional)
+## Other modes
 
-Wan 2.2 mode creates real AI-generated scene motion. It needs a separately hosted GPU API and can cost money. Vercel hosts Mira's web interface; it does not provide the video-generation GPU. The `mira-wan-gpu/` folder contains the optional FastAPI GPU service configuration.
-
-When you use AI mode, scene analysis sends a resized image to the public Hugging Face Qwen Vision Space. Video generation sends the image to the GPU URL configured in the app.
+- **Local camera motion** renders an instant WebM in the browser. It moves the camera over the image; it does not animate people or objects.
+- **My Wan 2.2 GPU server** supports a user-configured server for longer AI video jobs and stitching.
 
 ## Run or deploy
 
@@ -26,5 +25,5 @@ npm install
 npm run dev
 ```
 
-To deploy to Vercel, import the project repository. The included `vercel.json` configures the Vite build and output directory. Free Motion works without setting any environment variables.
+To deploy to Vercel, import the project repository. The included `vercel.json` configures the Vite build and output directory. Free AI uses the public shared service and does not require Vercel secrets.
 
