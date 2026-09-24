@@ -151,7 +151,8 @@ const buildPlan=async()=>{
     if(!res.ok)return fallback;
     const data=await res.json();
     const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?[12](?:[. -]?(?:1|2))?/i.test((x.id||"")+" "+(x.cardData?.title||""))).map(x=>x.id);
-    return [...new Set([...live,...fallback])].slice(0,20);
+    const speedRank=s=>/lightning|fast|fp8|aoti/i.test(s)?0:1;
+    return [...new Set([...live,...fallback])].sort((a,b)=>speedRank(a)-speedRank(b)).slice(0,12);
   }catch{return fallback}
  };
  const chooseVideoEndpoint=api=>{
@@ -175,14 +176,14 @@ const buildPlan=async()=>{
    if(/negative|neg.?prompt/.test(label))return negative;
    if(label==="prompt"||/^prompt\b/.test(label)||/caption|description/.test(label))return prompt;
    if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,3.5);
-   if(/frame|frames|num frames/.test(label))return Math.max(17,Math.min(81,Math.round((Number(d)||3.5)*16)+1));
+   if(/frame|frames|num frames/.test(label))return Math.max(13,Math.min(61,Math.round((Number(d)||3.5)*12)+1));
    if(/step|steps|inference/.test(label))return 6;
    if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
    if(/randomize/.test(label))return true;
    if(/guidance|cfg/.test(label))return 1;
-   if(/fps|frame.?rate/.test(label))return 16;
-   if(/height/.test(label))return aspect==="9:16"?1280:540;
-   if(/width/.test(label))return aspect==="9:16"?720:960;
+   if(/fps|frame.?rate/.test(label))return 12;
+   if(/height/.test(label))return aspect==="9:16"?1024:432;
+   if(/width/.test(label))return aspect==="9:16"?576:768;
    if(/quality/.test(label))return 6;
    if(/scheduler/.test(label))return "UniPCMultistep";
    if(/flow shift/.test(label))return 3;
@@ -258,7 +259,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
      setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
      const form=new FormData();
      form.append("image",currentBlob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
-     form.append("negative_prompt",negative);form.append("width",String(dims.w));form.append("height",String(dims.h));form.append("fps","16");form.append("steps","8");form.append("duration",String(segmentDuration));
+     form.append("negative_prompt",negative);form.append("width",aspect==="9:16"?"576":"768");form.append("height",aspect==="9:16"?"1024":"432");form.append("fps","12");form.append("steps","6");form.append("duration",String(segmentDuration));
      form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
      const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
      if(!response.ok)throw new Error("Personal GPU server returned HTTP "+response.status);
