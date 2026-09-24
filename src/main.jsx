@@ -145,7 +145,7 @@ const buildPlan=async()=>{
     "Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom",
     "dream2589632147/Dream-wan2-2-fp8da-aoti-preview-2",
     "multimodalart/Wan2.1-Fast",
-    "linoyts/Wan2.2-14B-rCM-Fast"
+    "linoyts/wan2-2-i2v-rCM"
   ];
   try{
     const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
@@ -283,11 +283,11 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
    }
 
    const providerHealth=JSON.parse(localStorage.getItem("miraProviderHealth")||"{}");
-   const shuffledProviders=[...discovered].filter(s=>!providerHealth[s]||providerHealth[s].cooldownUntil<Date.now());
+   const availableProviders=[...discovered].filter(s=>!providerHealth[s]||providerHealth[s].cooldownUntil<Date.now());
    for(let pi=0;pi<shuffledProviders.length;pi++){
     const space=shuffledProviders[pi];
     try{
-     setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+shuffledProviders.length+" — "+space.split("/")[0]+"…");
+     setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+availableProviders.length+" — "+space.split("/")[0]+"…");
      const response=await generateWithFreeSpace(space,currentBlob,segmentPrompt,negative,segmentDuration);
      result=response.result;
      if(result){
@@ -298,12 +298,14 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     }catch(providerError){
      lastError=String(providerError?.message||providerError||"");
      const previous=providerHealth[space]?.failureCount||0; providerHealth[space]={success:false,lastFailure:Date.now(),failureCount:previous+1,cooldownUntil:Date.now()+Math.min(15*60*1000,15000*Math.pow(2,Math.min(previous,5)))}; localStorage.setItem("miraProviderHealth",JSON.stringify(providerHealth));
-     if(/ZeroGPU quota|quota exceeded|requested vs\\.|remaining quota/i.test(lastError)){
-      throw new Error("The free AI GPU quota is currently unavailable. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
-     }
     }
    }
-   if(segmentUrls.length!==segment+1)throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
+   if(segmentUrls.length!==segment+1){
+    if(/401|404|paused|private|quota|ZeroGPU|unauthorized|not found/i.test(lastError)){
+     throw new Error("No currently usable free Wan 2.2 GPU backend was available. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
+    }
+    throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
+   }
    if(segment+1<segmentCount){
     try{
      setStatus("Building continuity frame for segment "+(segment+2)+" of "+segmentCount+"…");
