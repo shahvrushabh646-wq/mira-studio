@@ -142,7 +142,8 @@ const buildPlan=async()=>{
     "r3gm/wan2-2-fp8da-aoti-preview2",
     "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
     "observantdistressed/Wan2.2-14B-Fast-Preview",
-    "Saravutw/WAN2.2_I2V_LIGHTNING-Video-4-8step",
+    "Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom",
+    "dream2589632147/Dream-wan2-2-fp8da-aoti-preview-2",
     "multimodalart/Wan2.1-Fast",
     "linoyts/Wan2.2-14B-rCM-Fast"
   ];
