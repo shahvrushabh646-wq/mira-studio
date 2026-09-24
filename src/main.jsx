@@ -284,7 +284,14 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
    }
 
    const providerHealth=JSON.parse(localStorage.getItem("miraProviderHealth")||"{}");
-   const availableProviders=[...discovered].filter(s=>!providerHealth[s]||providerHealth[s].cooldownUntil<Date.now());
+   const now=Date.now();
+   const availableProviders=[...discovered].sort((a,b)=>{
+    const ah=providerHealth[a]||{}, bh=providerHealth[b]||{};
+    const aReady=!ah.cooldownUntil||ah.cooldownUntil<=now;
+    const bReady=!bh.cooldownUntil||bh.cooldownUntil<=now;
+    if(aReady!==bReady)return aReady?-1:1;
+    return (ah.failureCount||0)-(bh.failureCount||0);
+   });
    for(let pi=0;pi<availableProviders.length;pi++){
     const space=availableProviders[pi];
     try{
