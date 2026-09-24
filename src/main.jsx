@@ -96,7 +96,7 @@ function App(){
  useEffect(()=>{try{if(localEngineUrl)localStorage.setItem("miraCloudGpuUrl",localEngineUrl);if(gpuApiKey)localStorage.setItem("miraGpuApiKey",gpuApiKey)}catch{}},[localEngineUrl,gpuApiKey]);
  useEffect(()=>{let cancelled=false,objectUrl="";if(!video){setPlayableVideo("");return()=>{}};setPlayableVideo("");fetch(video,{mode:"cors"}).then(r=>{if(!r.ok)throw new Error("Video download failed");return r.blob()}).then(blob=>{if(cancelled)return;objectUrl=URL.createObjectURL(blob);setPlayableVideo(objectUrl)}).catch(()=>{if(!cancelled)setPlayableVideo(video)});return()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl)}},[video]);
  const dims=aspect==="9:16"?{w:1080,h:1920}:{w:1920,h:1080};
- const shots=useMemo(()=>makeDirectorShots(visualAnalysis,brief,duration),[visualAnalysis,brief,duration]);
+ const shots=useMemo(()=>parseDirectorShots(visualAnalysis,brief,duration),[visualAnalysis,brief,duration]);
  const onFile=e=>{const f=e.target.files?.[0];if(!f)return;setFile(f);setPreview(URL.createObjectURL(f));setPlan(null);setVideo("");setError("");setStatus("Image loaded — ready for scene director planning.")};
  const analyzeReference=async(blob)=>{
  const vision=await Client.connect("developer0hye/Qwen2.5-VL-7B-Instruct");
