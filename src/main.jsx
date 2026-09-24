@@ -253,9 +253,9 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
    let result=null,lastError="";
    const activeShot=plan?.shots?.[segment]||plan?.shots?.[segment%Math.max(1,plan?.shots?.length||1)];
    const segmentPrompt=basePrompt+"\nACTIVE SHOT ONLY: "+(activeShot?.name||"Primary action")+"\nACTION: "+(activeShot?.action||brief)+"\nCAMERA: "+(activeShot?.camera||"slow cinematic push-in")+"\nSEGMENT "+(segment+1)+" OF "+segmentCount+". Generate ONLY this shot. Continue naturally from the previous segment while preserving the same scene, identities, wardrobe, objects and lighting.";
-   const localUrl=(engine==="personal"?(localEngineUrl||""):(typeof window!=="undefined"&&localStorage.getItem("miraCloudGpuUrl")||"")).trim();
+   const localUrl=(engine==="personal"?(localEngineUrl||""):"").trim();
 
-   if(localUrl){
+   if(engine==="personal"&&localUrl){
     try{
      setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
      const form=new FormData();
@@ -282,7 +282,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
    }
 
-   const shuffledProviders=[...discovered].sort(()=>Math.random()-.5);
+   const shuffledProviders=[...discovered];
    for(let pi=0;pi<shuffledProviders.length;pi++){
     const space=shuffledProviders[pi];
     try{
