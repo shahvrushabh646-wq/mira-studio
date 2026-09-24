@@ -170,7 +170,7 @@ ${shotDirection}
 Follow the described subject action, camera angle, framing, lighting, environment motion and timing. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity. Never add unrelated people or objects, invent text, morph subjects, or turn the scene into a product advertisement unless supported.
 ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
   ).slice(0,10000);
-  const gpuBase=(localEngineUrl||"").trim().replace(/\\/$/,"");
+  const gpuBase=(localEngineUrl||"").trim().replace(/\/$/,"");
   if(!gpuBase) throw new Error("Add your dedicated Wan 2.2 GPU API URL in Settings before generating.");
   setStatus("Checking dedicated Wan 2.2 GPU…");
   const health=await checkLocalEngine();
@@ -190,7 +190,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     form.append("prompt",segmentPrompt);
     form.append("negative_prompt",negative);
     const segmentFrames=segmentDuration<=3.5?16:segmentDuration<=7?32:64;
-    form.append("frames",String(segmentFrames));
+    form.append("frames",String(segmentFrames));\n    form.append("duration",String(segmentDuration));
     form.append("width",aspect==="9:16"?"480":"832");
     form.append("height",aspect==="9:16"?"832":"480");
     form.append("fps","12");
@@ -210,10 +210,10 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
        if(!sr.ok)throw new Error("Could not read dedicated GPU job status (HTTP "+sr.status+").");
        const st=await sr.json();
        if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
-       if(st.status==="completed"&&st.video_url){
+       if((st.status==="completed"||st.status==="COMPLETE")&&st.video_url){
          segmentUrls.push(new URL(st.video_url,gpuBase).href);completed=true;break;
        }
-       if(st.status==="failed"||st.status==="error")throw new Error(st.message||"Dedicated Wan 2.2 GPU generation failed.");
+       if(st.status==="failed"||st.status==="FAILED"||st.status==="error"||st.status==="ERROR")throw new Error(st.message||"Dedicated Wan 2.2 GPU generation failed.");
       }
       if(!completed)throw new Error("Dedicated Wan 2.2 GPU generation timed out.");
     }
