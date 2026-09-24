@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState}from"react";
 import{createRoot}from"react-dom/client";
 import{Client,handle_file}from"@gradio/client";
-import{Upload,Play,Download,RefreshCw,Film,Sparkles,Check,Loader2,Clapperboard,Settings2,AlertTriangle,ChevronDown,ChevronUp,Copy,SlidersHorizontal, WandSparkles}from"lucide-react";
+import{Upload,Play,Download ,Film,Sparkles,Check,Loader2,Clapperboard,Settings2,AlertTriangle,ChevronDown,ChevronUp, WandSparkles}from"lucide-react";
 import"./styles.css";
 
 const cameraMoves=["locked hero push-in","slow lateral slide","macro texture drift","smooth overhead reveal","controlled 360 orbit","low-angle rise","diagonal tracking move","locked closing frame"];
@@ -156,64 +156,6 @@ const buildPlan=async()=>{
     return [...new Set([...live,...fallback])].sort((a,b)=>speedRank(a)-speedRank(b)).slice(0,12);
   }catch{return fallback}
  };
- const chooseVideoEndpoint=api=>{
-  const named=api?.named_endpoints||api?.namedEndpoints||{};
-  const entries=Object.entries(named);
-  const candidates=entries.filter(([name,ep])=>{
-   const text=(name+" "+JSON.stringify(ep)).toLowerCase();
-   const returns=JSON.stringify(ep?.returns||[]).toLowerCase();
-   return /generate.*video|image.*to.*video|i2v|wan/.test(text)||/video|filedata/.test(returns);
-  });
-  return (candidates.find(([name])=>/generate_video|i2v|generate.*video/i.test(name))||candidates[0]||entries.find(([name])=>/video|generate/i.test(name))||null);
- };
- const buildGradioInputs=(endpoint,blob,prompt,negative,d)=>{
-  const params=endpoint?.parameters||endpoint?.inputs||[];
-  if(!Array.isArray(params)||!params.length)return null;
-  const values=params.map(p=>{
-   const label=String(p?.label||p?.parameter_name||p?.name||"").trim().toLowerCase();
-   const type=String(p?.type||p?.component||"").toLowerCase();
-   // Optional "Last Image" must be null; sending the reference image here changes the model's conditioning.
-   if(/last image|optional.*image|end image|last frame/.test(label))return null;
-   if(/input image|reference image|start image|image to animate|source image|input.*img|image upload|upload image|^image$/.test(label)||(/image|filepath|file/.test(type)&&!/negative|last|end/.test(label)))return handle_file(blob);
-   if(/negative|neg.?prompt/.test(label))return negative;
-   if(label==="prompt"||/^prompt\b/.test(label)||/caption|description/.test(label))return prompt;
-   if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,3.5);
-   if(/frame|frames|num frames/.test(label)){const target=Math.round((Number(d)||3.5)*12)+1;return [16,32,64].reduce((best,v)=>Math.abs(v-target)<Math.abs(best-target)?v:best,16);}
-   if(/step|steps|inference/.test(label))return 6;
-   if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
-   if(/randomize/.test(label))return true;
-   if(/guidance|cfg/.test(label))return 1;
-   if(/fps|frame.?rate/.test(label))return 12;
-   if(/height/.test(label))return aspect==="9:16"?1024:432;
-   if(/width/.test(label))return aspect==="9:16"?576:768;
-   if(/quality/.test(label))return 6;
-   if(/scheduler/.test(label))return "UniPCMultistep";
-   if(/flow shift/.test(label))return 3;
-   if(/frame multiplier/.test(label))return 2;
-   if(/upscale factor/.test(label))return 1;
-   if(/safe mode|safety|enable.*checker|display result/.test(label))return true;
-   if(p?.default!==undefined&&p?.default!==null)return p.default;
-   if(/bool|checkbox|enable/.test(type))return false;
-   if(/number|slider|float|int/.test(type))return 1;
-   return null;
-  });
-  const required=params.filter(p=>p?.optional===false||p?.required===true);
-  if(values.length!==params.length)return null;
-  if(required.some((p,i)=>values[i]===null||values[i]===undefined))return null;
-  return values;
- };
- const generateWithFreeSpace=async(space,blob,prompt,negative,d)=>{
-  const client=await Client.connect(space);
-  const api=await client.view_api(true);
-  const selected=chooseVideoEndpoint(api);
-  if(!selected)throw new Error("No compatible image-to-video endpoint exposed by this Space.");
-  const [endpoint,definition]=selected;
-  const args=buildGradioInputs(definition,blob,prompt,negative,d);
-  if(!args)throw new Error("Space API schema could not be mapped safely.");
-  const result=await client.predict(endpoint,args);
-  return {result,space,endpoint};
- };
- const extractVideoRef=(result,space)=>{const seen=new Set();const walk=v=>{if(!v)return "";if(typeof v==="string"){if(/^https?:\/\//.test(v)||v.startsWith("data:"))return v;if(/\.mp4(?:\?|$)|\.webm(?:\?|$)|^\/gradio_api\/file=/.test(v))return v}if(typeof v==="object"){if(seen.has(v))return "";seen.add(v);for(const k of ["url","path","video","data","value"]){const hit=walk(v[k]);if(hit)return hit}if(Array.isArray(v)){for(const item of v){const hit=walk(item);if(hit)return hit}}}return ""};const found=walk(result?.data??result);if(!found)return "";if(/^https?:\/\//.test(found)||found.startsWith("data:"))return found;if(found.startsWith("/gradio_api/file="))return "https://huggingface.co/spaces/"+space+found;return "https://huggingface.co/spaces/"+space+"/file="+found.replace(/^\/+/, "")};
  const stitchVideos=async(urls)=>{
   if(urls.length===1)return urls[0];
   const videos=[];
@@ -345,7 +287,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
   setJob({requestId:"mira-long-film-"+Date.now(),segments:segmentUrls.length});
   setStatus("AI film ready — "+requestedDuration+"s requested.");
  }catch(e){
-  const message=String(e?.message||e||"Free Wan generation failed");
+  const message=String(e?.message||e||"Wan 2.2 dedicated GPU generation failed");
   setError(message);setStatus("");
  }finally{
   setBusy(false);
