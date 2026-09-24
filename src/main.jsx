@@ -60,7 +60,7 @@ function detectCategory(text=""){
 function parseDirectorShots(analysis,brief,duration){
  const count=Math.max(1,Math.min(20,Math.ceil((Number(duration)||3.5)/3.5)));
  const base=(Number(duration)||3.5)/count;
- const fallback=storyTemplates[detectCategory((analysis||"")+" "+(brief||"")]||storyTemplates.generic;
+ const fallback=storyTemplates[detectCategory((analysis||"")+" "+(brief||""))]||storyTemplates.generic;
  let parsed=[];
  try{
   const fenced=String(analysis||"").match(/\\{[\\s\\S]*\\}/)?.[0];
