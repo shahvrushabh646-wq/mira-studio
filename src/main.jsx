@@ -178,7 +178,7 @@ const buildPlan=async()=>{
    if(/negative|neg.?prompt/.test(label))return negative;
    if(label==="prompt"||/^prompt\b/.test(label)||/caption|description/.test(label))return prompt;
    if(/duration|seconds|video length|length/.test(label))return Math.min(Number(d)||3.5,3.5);
-   if(/frame|frames|num frames/.test(label))return Math.max(13,Math.min(61,Math.round((Number(d)||3.5)*12)+1));
+   if(/frame|frames|num frames/.test(label)){const target=Math.round((Number(d)||3.5)*12)+1;return [16,32,64].reduce((best,v)=>Math.abs(v-target)<Math.abs(best-target)?v:best,16);}
    if(/step|steps|inference/.test(label))return 6;
    if(/seed/.test(label))return Math.floor(Math.random()*2147483647);
    if(/randomize/.test(label))return true;
