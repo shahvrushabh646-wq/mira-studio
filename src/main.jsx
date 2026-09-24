@@ -225,7 +225,38 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
    }
 
-   if(segmentUrls.length!==segment+1){\n    throw new Error(lastError||"Dedicated Wan 2.2 GPU did not return a usable AI video segment. Check the GPU URL/model status and try again.");\n   }\n   if(segment+1<segmentCount){
+   const providerHealth=JSON.parse(localStorage.getItem("miraProviderHealth")||"{}");
+   const now=Date.now();
+   const availableProviders=[...discovered].sort((a,b)=>{
+    const ah=providerHealth[a]||{}, bh=providerHealth[b]||{};
+    const aReady=!ah.cooldownUntil||ah.cooldownUntil<=now;
+    const bReady=!bh.cooldownUntil||bh.cooldownUntil<=now;
+    if(aReady!==bReady)return aReady?-1:1;
+    return (ah.failureCount||0)-(bh.failureCount||0);
+   });
+   for(let pi=0;pi<availableProviders.length;pi++){
+    const space=availableProviders[pi];
+    try{
+     setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+availableProviders.length+" — "+space.split("/")[0]+"…");
+     const response=await generateWithFreeSpace(space,currentBlob,segmentPrompt,negative,segmentDuration);
+     result=response.result;
+     if(result){
+      const found=extractVideoRef(result,space);
+      if(found){providerHealth[space]={success:true,lastSuccess:Date.now(),cooldownUntil:0};localStorage.setItem("miraProviderHealth",JSON.stringify(providerHealth));segmentUrls.push(found);break;}
+      lastError="Wan 2.2 returned no usable video file.";
+     }
+    }catch(providerError){
+     lastError=String(providerError?.message||providerError||"");
+     const previous=providerHealth[space]?.failureCount||0; providerHealth[space]={success:false,lastFailure:Date.now(),failureCount:previous+1,cooldownUntil:Date.now()+Math.min(15*60*1000,15000*Math.pow(2,Math.min(previous,5)))}; localStorage.setItem("miraProviderHealth",JSON.stringify(providerHealth));
+    }
+   }
+   if(segmentUrls.length!==segment+1){
+    if(/401|404|paused|private|quota|ZeroGPU|unauthorized|not found/i.test(lastError)){
+     throw new Error("No currently usable free Wan 2.2 GPU backend was available. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
+    }
+    throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
+   }
+   if(segment+1<segmentCount){
     try{
      setStatus("Building continuity frame for segment "+(segment+2)+" of "+segmentCount+"…");
      const continuityUrl=segmentUrls[segment];
@@ -276,7 +307,7 @@ return <div className="app"><header><div className="brand"><div className="logo"
  <div className="card stage"><div className="cardhead"><span>03</span><h2>AI generation</h2><div className="modeltag">{engine==="personal"?"Wan 2.2 • Personal GPU":"Wan 2.2 • Real AI I2V"}</div></div><div className="preview">{video?<>{playableVideo?<video src={playableVideo} poster={preview} controls autoPlay loop muted playsInline preload="auto"/>:<div className="videoLoading">Loading generated video…</div>}<a className="videoOpen" href={video} target="_blank" rel="noreferrer">Open generated video</a></>:preview?<div className="sourcepreview"><img src={preview}/><span>Validated reference • {dims.w}×{dims.h}</span></div>:<div className="empty"><Film size={35}/><p>Final film preview</p><small>Your generated film appears here. If the embedded preview does not load, use Open generated video.</small></div>}</div>
  <div className="actions"><button className="primary" disabled={!file||!plan||busy} onClick={generate}>{busy?<><Loader2 className="spin" size={18}/> {status||"Generating…"}</>:<><Play size={18}/> Generate AI film</>}</button>{video&&<a className="secondary" href={video} target="_blank" rel="noreferrer" download="mira-ai-film"><Download size={16}/> Save video</a>}</div>
  <div className="status">{status&&<><span className="statusdot"/>{status}</>}{job&&<span className="request">Request {job.requestId.slice(0,8)}…</span>}</div><div className="generationNotes"><span><Check size={13}/> Real AI image-to-video</span><span><Check size={13}/> Scene-specific shot direction</span><span><Check size={13}/> Identity / text protection</span></div>{error&&<div className="error"><AlertTriangle size={16}/>{error}</div>}
- <p className="fineprint">Dedicated GPU only. Mira sends every generation request directly to your configured Wan 2.2 GPU server. No public Hugging Face fallback, no free-space discovery, no app-side credits, and no fake zoom/pan fallback.</p>
+ <p className="fineprint">Dedicated GPU only. Mira sends every generation request directly to your configured Wan 2.2 GPU server. Public GPU discovery and free-space fallback are disabled. Mira never substitutes a fake zoom/pan animation.</p>
  </div></section></main></div>}
 createRoot(document.getElementById("root")).render(<App/>);
 // Build-safe source marker
