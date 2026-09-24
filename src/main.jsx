@@ -58,12 +58,14 @@ function detectCategory(text=""){
 }
 
 function parseDirectorShots(analysis,brief,duration){
- const count=Math.max(1,Math.min(60,Math.ceil((Number(duration)||3.5)/3.5)));
- const base=(Number(duration)||3.5)/count;
+ const requestedDuration=Number(duration)||4;
+ const segmentDuration=requestedDuration<=60?(49/12):(49/8);
+ const count=Math.max(1,Math.min(60,Math.ceil(requestedDuration/segmentDuration)));
+const base=requestedDuration/count;
  const fallback=storyTemplates[detectCategory((analysis||"")+" "+(brief||""))]||storyTemplates.generic;
  let parsed=[];
  try{
-  const fenced=String(analysis||"").match(/\\{[\\s\\S]*\\}/)?.[0];
+  const fenced=String(analysis||"").match(/\{[\s\S]*\}/)?.[0];
   if(fenced){
    const obj=JSON.parse(fenced);
    if(Array.isArray(obj))parsed=obj;
@@ -89,10 +91,11 @@ const baseShots=storyTemplates.generic.map(s=>({name:s[0],action:s[1],camera:s[2
 function selectedMotionText(style,motion,intensity){return `Professional cinematic scene, ${style}, ${motion} camera movement, motion intensity ${intensity}%, physically plausible movement, preserve exact identities, objects, environment, composition and visible text.`}
 
 function App(){
- const[file,setFile]=useState(null),[preview,setPreview]=useState(""),[playableVideo,setPlayableVideo]=useState(""),[localEngineUrl,setLocalEngineUrl]=useState("http://127.0.0.1:8000"),[gpuApiKey,setGpuApiKey]=useState(""),[brief,setBrief]=useState("Create a premium cinematic scene based strictly on the uploaded image. Understand what is actually happening first, then animate only actions that logically belong to the visible people, objects, environment and setting. Preserve identities, proportions, composition and visible wording. Use realistic lighting, depth, physically plausible motion and clean editorial cuts. Do not invent unrelated content.");
- const[engine,setEngine]=useState("personal"),[aspect,setAspect]=useState("9:16"),[duration,setDuration]=useState(3.5),[visualAnalysis,setVisualAnalysis]=useState(""),[plan,setPlan]=useState(null),[busy,setBusy]=useState(false),[video,setVideo]=useState(""),[status,setStatus]=useState(""),[error,setError]=useState(""),[settings,setSettings]=useState(true),[style,setStyle]=useState("Cinematic"),[motion,setMotion]=useState("Cinematic"),[intensity,setIntensity]=useState(45),[negative,setNegative]=useState("distorted face, identity drift, extra limbs, duplicated subjects, warped objects, invented text, morphing, flicker, jitter, deformed hands, watermark, low quality"),[expanded,setExpanded]=useState(0),[history,setHistory]=useState([]),[job,setJob]=useState(null),fileRef=useRef(null);
+ const[quality,setQuality]=useState("professional");
+ const[file,setFile]=useState(null),[preview,setPreview]=useState(""),[playableVideo,setPlayableVideo]=useState(""),[localEngineUrl,setLocalEngineUrl]=useState(()=>["localhost","127.0.0.1"].includes(window.location.hostname)?"http://127.0.0.1:8000":""),[gpuApiKey,setGpuApiKey]=useState(""),[brief,setBrief]=useState("Create a premium cinematic scene based strictly on the uploaded image. Understand what is actually happening first, then animate only actions that logically belong to the visible people, objects, environment and setting. Preserve identities, proportions, composition and visible wording. Use realistic lighting, depth, physically plausible motion and clean editorial cuts. Do not invent unrelated content.");
+ const[engine,setEngine]=useState("personal"),[aspect,setAspect]=useState("9:16"),[duration,setDuration]=useState(4),[visualAnalysis,setVisualAnalysis]=useState(""),[plan,setPlan]=useState(null),[busy,setBusy]=useState(false),[video,setVideo]=useState(""),[status,setStatus]=useState(""),[error,setError]=useState(""),[settings,setSettings]=useState(true),[style,setStyle]=useState("Cinematic"),[motion,setMotion]=useState("Cinematic"),[intensity,setIntensity]=useState(45),[negative,setNegative]=useState("distorted face, identity drift, extra limbs, duplicated subjects, warped objects, invented text, morphing, flicker, jitter, deformed hands, watermark, low quality"),[expanded,setExpanded]=useState(0),[history,setHistory]=useState([]),[job,setJob]=useState(null),fileRef=useRef(null);
  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
- useEffect(()=>{try{const u=localStorage.getItem("miraCloudGpuUrl");const k=localStorage.getItem("miraGpuApiKey");if(u)setLocalEngineUrl(u);if(k)setGpuApiKey(k)}catch{}},[]);
+ useEffect(()=>{try{const u=localStorage.getItem("miraCloudGpuUrl");const k=localStorage.getItem("miraGpuApiKey");const hosted=! ["localhost","127.0.0.1"].includes(window.location.hostname);const loopback=u&&/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(u);if(u&&!(hosted&&loopback))setLocalEngineUrl(u);if(k)setGpuApiKey(k)}catch{}},[]);
  useEffect(()=>{try{if(localEngineUrl)localStorage.setItem("miraCloudGpuUrl",localEngineUrl);if(gpuApiKey)localStorage.setItem("miraGpuApiKey",gpuApiKey)}catch{}},[localEngineUrl,gpuApiKey]);
  useEffect(()=>{let cancelled=false,objectUrl="";if(!video){setPlayableVideo("");return()=>{}};setPlayableVideo("");fetch(video,{mode:"cors"}).then(r=>{if(!r.ok)throw new Error("Video download failed");return r.blob()}).then(blob=>{if(cancelled)return;objectUrl=URL.createObjectURL(blob);setPlayableVideo(objectUrl)}).catch(()=>{if(!cancelled)setPlayableVideo(video)});return()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl)}},[video]);
  const dims=aspect==="9:16"?{w:1080,h:1920}:{w:1920,h:1080};
@@ -127,7 +130,7 @@ const buildPlan=async()=>{
   const blob=await (await fetch(imageData)).blob();
   let analysis="";
   try{analysis=await analyzeReference(blob);setVisualAnalysis(analysis)}
-  catch(e){analysis="Reference image is the source of truth. Preserve the exact visible people, objects, environment, composition and clearly visible wording. Infer actions only from what the scene visibly supports."}
+  catch(e){throw new Error("Image analysis could not reach the Hugging Face Qwen Vision service. Check the connection and try again; Mira did not create a shot plan without analyzing the image.")}
   const generated=parseDirectorShots(analysis,brief,duration);
   setPlan({concept:brief,category:detectCategory(analysis+" "+brief),reference:analysis,shots:generated});
   setStatus("Director step 2/2 — shot plan built from the actual reference. Review it before generation.");
@@ -136,17 +139,6 @@ const buildPlan=async()=>{
 };
  const makePreparedData=()=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{const maxW=aspect==="9:16"?720:960,maxH=aspect==="9:16"?1280:540;const c=document.createElement("canvas");const scale=Math.min(maxW/img.width,maxH/img.height,1);c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));const x=c.getContext("2d");x.fillStyle="#101014";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);let q=.76,data=c.toDataURL("image/jpeg",q);while(data.length>3500000&&q>.45){q-=.05;data=c.toDataURL("image/jpeg",q)}resolve(data)};img.onerror=reject;img.src=preview});
  const checkLocalEngine=async()=>{const base=localEngineUrl.replace(/\/$/,"");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3500);try{const r=await fetch(base+"/health",{method:"GET",signal:controller.signal,mode:"cors"});if(!r.ok)throw new Error("Local GPU engine returned HTTP "+r.status);const data=await r.json();if(data?.ready===false||data?.status==="error")throw new Error(data?.message||"Wan 2.2 GPU is reachable, but the model/checkpoint is not ready.");return data}finally{clearTimeout(timer)}};
-  const stitchVideos=async(urls)=>{
-  if(urls.length===1)return urls[0];
-  const videos=[];
-  for(const url of urls){const response=await fetch(url,{mode:"cors"});if(!response.ok)throw new Error("Could not download one generated segment for stitching.");const mediaBlob=await response.blob();const objectUrl=URL.createObjectURL(mediaBlob);const v=document.createElement("video");v.muted=true;v.playsInline=true;v.src=objectUrl;await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(new Error("Could not decode one generated segment for stitching."));});videos.push(v);}
-  const canvas=document.createElement("canvas");canvas.width=aspect==="9:16"?720:960;canvas.height=aspect==="9:16"?1280:540;
-  const stream=canvas.captureStream(24);const chunks=[];const recorder=new MediaRecorder(stream,{mimeType:"video/webm;codecs=vp9"});
-  recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-  const done=new Promise(res=>recorder.onstop=res);recorder.start();
-  for(const v of videos){await new Promise(async(resolve,reject)=>{v.currentTime=0;v.onended=resolve;v.onerror=()=>reject(new Error("Segment playback failed."));try{await v.play();}catch(e){reject(e);return;}const draw=()=>{if(v.ended)return;const ctx=canvas.getContext("2d");ctx.drawImage(v,0,0,canvas.width,canvas.height);requestAnimationFrame(draw)};draw();});}
-  recorder.stop();await done;const blob=new Blob(chunks,{type:"video/webm"});return URL.createObjectURL(blob);
-};
 const generate=async()=>{
  if(!file||!plan)return;
  setBusy(true);setError("");setVideo("");
@@ -155,9 +147,10 @@ const generate=async()=>{
   const imageData=await makePreparedData();
   let currentBlob=await(await fetch(imageData)).blob();
   const requestedDuration=Number(duration)||3.5;
-  const segmentDuration=requestedDuration<=60?3.5:5;
+  const segmentDuration=requestedDuration<=60?(49/12):(49/8);
   const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));
   const segmentUrls=[];
+  const segmentJobIds=[];
   const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
   const basePrompt=(`
 FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Generate REAL AI motion with Wan 2.2 image-to-video on the configured dedicated GPU.
@@ -173,7 +166,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}
 
   const localUrl=(localEngineUrl||"").trim().replace(/\/$/,"");
   if(!localUrl) throw new Error("Dedicated Wan 2.2 GPU API URL is not configured.");
-  if(/^https?:\/\/(127\.0\.0\.1|localhost)(:\\d+)?$/i.test(localUrl) && /^https:/i.test(window.location.protocol)){
+  if(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(localUrl) && /^https:/i.test(window.location.protocol)){
    throw new Error("Mira is running online, but the GPU URL is localhost. Enter the public HTTPS URL of your dedicated Wan 2.2 GPU API and enable CORS.");
   }
 
@@ -194,12 +187,11 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}
    form.append("image",currentBlob,"mira-reference.jpg");
    form.append("prompt",segmentPrompt);
    form.append("negative_prompt",negative);
-   const segmentFrames=segmentDuration<=3.5?16:segmentDuration<=7?32:64;
-   form.append("frames",String(segmentFrames));
+   form.append("frames","49");
    form.append("width",aspect==="9:16"?"480":"832");
    form.append("height",aspect==="9:16"?"832":"480");
-   form.append("fps","12");
-   form.append("steps","8");
+   form.append("fps",requestedDuration<=60?"12":"8");
+   form.append("steps",quality==="professional"?"40":"8");
    form.append("shots",JSON.stringify([activeShot||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
    if(segment>0) form.append("last_image",currentBlob,"mira-continuity.jpg");
 
@@ -220,6 +212,7 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}
    }
 
    const data=await response.json();
+   if(data?.job_id) segmentJobIds.push(String(data.job_id));
    let videoUrl=data?.video_url||data?.url||"";
    if(!videoUrl && data?.job_id){
     for(let attempt=0;attempt<180;attempt++){
@@ -266,8 +259,16 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}
    }
   }
 
-  setStatus("Assembling "+segmentUrls.length+" real AI-generated segment"+(segmentUrls.length===1?"":"s")+"…");
-  const finalVideo=await stitchVideos(segmentUrls);
+  setStatus("Assembling "+segmentUrls.length+" real AI-generated segment"+(segmentUrls.length===1?"":"s")+" into an MP4…");
+  let finalVideo=segmentUrls[0];
+  if(segmentUrls.length>1){
+   if(segmentJobIds.length!==segmentUrls.length) throw new Error("The GPU service did not return all job IDs needed for server-side MP4 stitching.");
+   const stitched=await fetch(localUrl+"/stitch",{method:"POST",headers:{...(gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:{}),"Content-Type":"application/json"},body:JSON.stringify({job_ids:segmentJobIds})});
+   if(!stitched.ok){let detail="";try{const body=await stitched.json();detail=body?.message||body?.detail||""}catch{}throw new Error("GPU MP4 stitching failed (HTTP "+stitched.status+")"+(detail?": "+detail:"."));}
+   const result=await stitched.json();
+   if(!result?.video_url) throw new Error("The GPU service stitched the film but returned no MP4 URL.");
+   finalVideo=new URL(result.video_url,localUrl).href;
+  }
   setVideo(finalVideo);
   setJob({requestId:"mira-wan-"+Date.now(),segments:segmentUrls.length});
   setStatus("AI film ready — generated entirely on your dedicated Wan 2.2 GPU.");
@@ -284,15 +285,16 @@ return <div className="app"><header><div className="brand"><div className="logo"
  <section className="grid">
  <div className="card"><div className="cardhead"><span>01</span><h2>Image & creative direction</h2><button className="iconbtn" onClick={()=>setSettings(!settings)}><Settings2 size={17}/></button></div>
  <button className="drop" onClick={()=>fileRef.current.click()}>{preview?<img src={preview}/>:<><Upload size={28}/><b>Upload any image</b><small>Class, lecture, people, event, product, nature — JPG, PNG or WebP</small></>}</button><input ref={fileRef} hidden type="file" accept="image/*" onChange={onFile}/>
- <div className="promptLabel"><label>Creative direction <span>Tell Mira exactly how you want the image to become a video</span></label><textarea className="creativePrompt" value={brief} onChange={e=>setBrief(e.target.value)} placeholder="Example: Make the teacher start writing on the board, students look toward the board, camera slowly moves from the back of the classroom toward the teacher, natural hand and head movement, realistic lighting, no new people or objects."/></div>{settings&&<div className="advancedSettings"><div className="settings"><label>Visual style<select value={style} onChange={e=>setStyle(e.target.value)}><option>Cinematic</option><option>Natural / realistic</option><option>Documentary</option><option>Dramatic</option><option>Premium commercial</option><option>Editorial</option></select></label><label>Motion language<select value={motion} onChange={e=>setMotion(e.target.value)}><option>Cinematic</option><option>Subtle</option><option>Dynamic</option><option>Subject follow</option><option>Orbit / tracking</option><option>Macro / detail</option></select></label></div><div className="settings"><label className="rangeLabel">Motion intensity <b>{intensity}%</b><input type="range" min="0" max="100" value={intensity} onChange={e=>setIntensity(+e.target.value)}/></label><label>Aspect ratio<select value={aspect} onChange={e=>setAspect(e.target.value)}><option>9:16</option><option>16:9</option></select></label></div><div className="settings"><label>Film duration<select value={duration} onChange={e=>setDuration(+e.target.value)}><option value="3.5">3.5 sec</option><option value="7">7 sec • 2 segments</option><option value="15">15 sec • 5 segments</option><option value="30">30 sec • 10 segments</option><option value="60">60 sec • 20 segments</option><option value="120">120 sec • long film</option><option value="300">300 sec • long film</option></select></label><label>Output quality<select defaultValue="standard"><option>Standard • fast</option><option>High • slower</option></select></label></div><div className="engineControls"><label>Generation engine<select value={engine} onChange={e=>setEngine(e.target.value)}><option value="personal">Wan 2.2 • My Dedicated GPU</option></select></label><label>My Wan 2.2 GPU API URL<input value={localEngineUrl} onChange={e=>setLocalEngineUrl(e.target.value)} placeholder="https://your-dedicated-wan-gpu.example.com"/></label>{engine==="personal"&&<label>Dedicated GPU API key (optional)<input type="password" value={gpuApiKey} onChange={e=>setGpuApiKey(e.target.value)} placeholder="Only for your dedicated GPU"/></label>}<label>Generation mode<input value={"Dedicated Wan 2.2 GPU • private queue + VRAM-aware generation"} readOnly/></label></div><label className="negativeLabel">Negative prompt<input value={negative} onChange={e=>setNegative(e.target.value)}/></label></div>}
+ <div className="promptLabel"><label>Creative direction <span>Tell Mira exactly how you want the image to become a video</span></label><textarea className="creativePrompt" value={brief} onChange={e=>setBrief(e.target.value)} placeholder="Example: Make the teacher start writing on the board, students look toward the board, camera slowly moves from the back of the classroom toward the teacher, natural hand and head movement, realistic lighting, no new people or objects."/></div>{settings&&<div className="advancedSettings"><div className="settings"><label>Visual style<select value={style} onChange={e=>setStyle(e.target.value)}><option>Cinematic</option><option>Natural / realistic</option><option>Documentary</option><option>Dramatic</option><option>Premium commercial</option><option>Editorial</option></select></label><label>Motion language<select value={motion} onChange={e=>setMotion(e.target.value)}><option>Cinematic</option><option>Subtle</option><option>Dynamic</option><option>Subject follow</option><option>Orbit / tracking</option><option>Macro / detail</option></select></label></div><div className="settings"><label className="rangeLabel">Motion intensity <b>{intensity}%</b><input type="range" min="0" max="100" value={intensity} onChange={e=>setIntensity(+e.target.value)}/></label><label>Aspect ratio<select value={aspect} onChange={e=>setAspect(e.target.value)}><option>9:16</option><option>16:9</option></select></label></div><div className="settings"><label>Film duration<select value={duration} onChange={e=>setDuration(+e.target.value)}><option value="4">4 sec • 1 segment</option><option value="7">7 sec • 2 segments</option><option value="15">15 sec • 4 segments</option><option value="30">30 sec • 8 segments</option><option value="60">60 sec • 15 segments</option><option value="120">120 sec • 20 segments</option><option value="300">300 sec • 49 segments</option></select></label><label>Output quality<select value={quality} onChange={e=>setQuality(e.target.value)}><option value="draft">Fast draft • 8 steps</option><option value="professional">Professional • 40 steps</option></select></label></div><div className="engineControls"><label>Generation engine<select value={engine} onChange={e=>setEngine(e.target.value)}><option value="personal">Wan 2.2 • My Dedicated GPU</option></select></label><label>My Wan 2.2 GPU API URL<input value={localEngineUrl} onChange={e=>setLocalEngineUrl(e.target.value)} placeholder="https://your-dedicated-wan-gpu.example.com"/></label>{engine==="personal"&&<label>Dedicated GPU API key (if required)<input type="password" value={gpuApiKey} onChange={e=>setGpuApiKey(e.target.value)} placeholder="Only for your dedicated GPU"/></label>}<label>Generation mode<input value={"Dedicated Wan 2.2 GPU • private queue + VRAM-aware generation"} readOnly/></label></div><label className="negativeLabel">Negative prompt<input value={negative} onChange={e=>setNegative(e.target.value)}/></label></div>}
  <div className="framecheck"><Check size={15}/><span>Delivery frame: <b>{dims.w} × {dims.h}</b> • {aspect}</span></div>
- <button className="primary" disabled={!file||busy} onClick={buildPlan}><Sparkles size={18}/> {busy?"Studying reference…":plan?"Refresh director plan":"Study image & build director plan"}</button>
+ <p className="fineprint visionDisclosure">When you select image analysis, Mira sends the prepared image to the public Hugging Face Qwen Vision Space for scene understanding. Video generation stays on your configured Wan 2.2 GPU.</p><button className="primary" disabled={!file||busy} onClick={buildPlan}><Sparkles size={18}/> {busy?"Studying reference…":plan?"Refresh director plan":"Study image & build director plan"}</button>
  </div>
  <div className="card"><div className="cardhead"><span>02</span><h2>Director shot plan</h2><span className="planmeta">{style} • {motion}</span></div>{plan?<div className="plan"><div className="planintro"><Clapperboard size={19}/><div><b>{plan.shots.length} shots • {duration}s total</b><p>Every shot is planned from the reference image analysis with distinct action + camera language.</p></div></div>{plan.shots.map((s,i)=><div className={"shot "+(expanded===i?"open":"")} key={s.name}><div className="num">{String(i+1).padStart(2,"0")}</div><div className="shotbody"><button className="shottoggle" onClick={()=>setExpanded(expanded===i?-1:i)}><span><b>{s.name}</b><small>{s.duration}s • {s.camera}</small></span>{expanded===i?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>{expanded===i&&<div className="shotedit"><label>Action<textarea value={s.action} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,action:e.target.value}:x)};setPlan(n)}}/></label><label>Camera<select value={s.camera} onChange={e=>{const n={...plan,shots:plan.shots.map((x,k)=>k===i?{...x,camera:e.target.value}:x)};setPlan(n)}}>{cameraMoves.map(m=><option key={m}>{m}</option>)}</select></label></div>} </div></div>)}<div className="timeline">{plan.shots.map((s,i)=><button key={i} className={expanded===i?"active":""} style={{flex:s.duration}} onClick={()=>setExpanded(i)}>{i+1}</button>)}</div><button className="secondary" onClick={buildPlan}><WandSparkles size={16}/> Rebuild director plan</button></div>:<div className="empty"><Film size={35}/><p>No shot plan yet.</p><small>Upload an image and let Mira study it before acting as the scene director.</small></div>}</div>
  <div className="card stage"><div className="cardhead"><span>03</span><h2>AI generation</h2><div className="modeltag">{engine==="personal"?"Wan 2.2 • Personal GPU":"Wan 2.2 • Real AI I2V"}</div></div><div className="preview">{video?<>{playableVideo?<video src={playableVideo} poster={preview} controls autoPlay loop muted playsInline preload="auto"/>:<div className="videoLoading">Loading generated video…</div>}<a className="videoOpen" href={video} target="_blank" rel="noreferrer">Open generated video</a></>:preview?<div className="sourcepreview"><img src={preview}/><span>Validated reference • {dims.w}×{dims.h}</span></div>:<div className="empty"><Film size={35}/><p>Final film preview</p><small>Your generated film appears here. If the embedded preview does not load, use Open generated video.</small></div>}</div>
- <div className="actions"><button className="primary" disabled={!file||!plan||busy} onClick={generate}>{busy?<><Loader2 className="spin" size={18}/> {status||"Generating…"}</>:<><Play size={18}/> Generate AI film</>}</button>{video&&<a className="secondary" href={video} target="_blank" rel="noreferrer" download="mira-ai-film"><Download size={16}/> Save video</a>}</div>
+<div className="actions"><button className="primary" disabled={!file||!plan||busy} onClick={generate}>{busy?<><Loader2 className="spin" size={18}/> {status||"Generating…"}</>:<><Play size={18}/> Generate AI film</>}</button>{video&&<a className="secondary" href={video} target="_blank" rel="noreferrer" download="mira-ai-film.mp4"><Download size={16}/> Save MP4</a>}</div>
  <div className="status">{status&&<><span className="statusdot"/>{status}</>}{job&&<span className="request">Request {job.requestId.slice(0,8)}…</span>}</div><div className="generationNotes"><span><Check size={13}/> Real AI image-to-video</span><span><Check size={13}/> Scene-specific shot direction</span><span><Check size={13}/> Identity / text protection</span></div>{error&&<div className="error"><AlertTriangle size={16}/>{error}</div>}
  <p className="fineprint">Dedicated GPU only. Mira sends every generation request directly to your configured Wan 2.2 GPU server. Public GPU discovery and free-space fallback are disabled. Mira never substitutes a fake zoom/pan animation.</p>
  </div></section></main></div>}
 createRoot(document.getElementById("root")).render(<App/>);
 // Build-safe source marker
+
