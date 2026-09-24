@@ -202,8 +202,8 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
     try{
      setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
      const form=new FormData();
-     form.append("image",currentBlob,"mira-reference.jpg");form.append("prompt",segmentPrompt);form.append("aspect",aspect);
-     form.append("negative_prompt",negative);form.append("width",aspect==="9:16"?"576":"768");form.append("height",aspect==="9:16"?"1024":"432");form.append("fps","12");form.append("steps","6");form.append("duration",String(segmentDuration));
+     form.append("image",currentBlob,"mira-reference.jpg");form.append("prompt",segmentPrompt);
+     form.append("negative_prompt",negative);const segmentFrames=segmentDuration<=3.5?16:segmentDuration<=7?32:64;form.append("frames",String(segmentFrames));form.append("width",aspect==="9:16"?"480":"832");form.append("height",aspect==="9:16"?"832":"480");form.append("fps","12");form.append("steps","8");
      form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
      const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
      if(!response.ok)throw new Error("Dedicated GPU server returned HTTP "+response.status);
