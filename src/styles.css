@@ -52,3 +52,5 @@ header{height:68px;backdrop-filter:blur(18px);background:rgba(9,9,11,.76);border
 .creativePrompt{width:100%;min-height:118px;resize:vertical;box-sizing:border-box;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#0d0d11;color:#f4f4f5;padding:13px 14px;line-height:1.55;outline:none;font:inherit}
 .creativePrompt::placeholder{color:#666872}
 .creativePrompt:focus{border-color:rgba(255,255,255,.28);box-shadow:0 0 0 3px rgba(255,255,255,.035)}
+
+.gpuConnect{display:flex;flex-direction:column;justify-content:center;gap:7px;min-width:0}.gpuConnect .secondary{margin:0;width:100%;justify-content:center}.gpuConnect p{margin:0;font-size:10px;line-height:1.45;overflow-wrap:anywhere}.gpuReady{color:#8fe5b1}.gpuWarning{color:#e7c27d}
