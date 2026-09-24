@@ -136,27 +136,7 @@ const buildPlan=async()=>{
 };
  const makePreparedData=()=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{const maxW=aspect==="9:16"?720:960,maxH=aspect==="9:16"?1280:540;const c=document.createElement("canvas");const scale=Math.min(maxW/img.width,maxH/img.height,1);c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));const x=c.getContext("2d");x.fillStyle="#101014";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);let q=.76,data=c.toDataURL("image/jpeg",q);while(data.length>3500000&&q>.45){q-=.05;data=c.toDataURL("image/jpeg",q)}resolve(data)};img.onerror=reject;img.src=preview});
  const checkLocalEngine=async()=>{const base=localEngineUrl.replace(/\/$/,"");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3500);try{const r=await fetch(base+"/health",{method:"GET",signal:controller.signal,mode:"cors"});if(!r.ok)throw new Error("Local GPU engine returned HTTP "+r.status);const data=await r.json();if(data?.ready===false||data?.status==="error")throw new Error(data?.message||"Wan 2.2 GPU is reachable, but the model/checkpoint is not ready.");return data}finally{clearTimeout(timer)}};
- const discoverWanBackends=async()=>{
-  const fallback=[
-    "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
-    "r3gm/wan2-2-fp8da-aoti-preview",
-    "r3gm/wan2-2-fp8da-aoti-preview2",
-    "kulkas2pintu/wan555",
-    "Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom",
-    "dream2589632147/Dream-wan2-2-fp8da-aoti-preview-2",
-    "Rchoks/wan555",
-    "KSYJA/wan2-2-fp8da-aoti-preview"
-  ];
-  try{
-    const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
-    if(!res.ok)return fallback;
-    const data=await res.json();
-    const live=data.filter(x=>x?.runtime?.stage==="RUNNING"&&/wan2[. -]?[12](?:[. -]?(?:1|2))?/i.test((x.id||"")+" "+(x.cardData?.title||""))).map(x=>x.id);
-    const speedRank=s=>/lightning|fast|fp8|aoti/i.test(s)?0:1;
-    return [...new Set([...live,...fallback])].sort((a,b)=>speedRank(a)-speedRank(b)).slice(0,12);
-  }catch{return fallback}
- };
- const stitchVideos=async(urls)=>{
+  const stitchVideos=async(urls)=>{
   if(urls.length===1)return urls[0];
   const videos=[];
   for(const url of urls){const response=await fetch(url,{mode:"cors"});if(!response.ok)throw new Error("Could not download one generated segment for stitching.");const mediaBlob=await response.blob();const objectUrl=URL.createObjectURL(mediaBlob);const v=document.createElement("video");v.muted=true;v.playsInline=true;v.src=objectUrl;await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(new Error("Could not decode one generated segment for stitching."));});videos.push(v);}
@@ -174,13 +154,13 @@ const generate=async()=>{
   setStatus("Preparing reference image…");
   const imageData=await makePreparedData();
   let currentBlob=await(await fetch(imageData)).blob();
-  const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
   const requestedDuration=Number(duration)||3.5;
-  const segmentDuration=Math.min(requestedDuration<=60?requestedDuration:5,3.5);
+  const segmentDuration=requestedDuration<=60?3.5:5;
   const segmentCount=Math.max(1,Math.ceil(requestedDuration/segmentDuration));
   const segmentUrls=[];
+  const shotDirection=(plan?.shots||[]).map((s,i)=>`SHOT ${i+1} — ${s.name} (${s.duration}s): ACTION: ${s.action} CAMERA: ${s.camera}`).join("\n");
   const basePrompt=(`
-FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Reconstruct and animate the exact scene described by the visual director analysis.
+FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Generate REAL AI motion with Wan 2.2 image-to-video on the configured dedicated GPU.
 VISUAL DIRECTOR SHEET:
 ${visualAnalysis||plan.reference||"Preserve the visible scene faithfully."}
 USER CREATIVE PROMPT / BRIEF:
@@ -188,81 +168,81 @@ ${brief}
 DIRECTOR SHOT PLAN:
 ${shotDirection}
 Follow the described subject action, camera angle, framing, lighting, environment motion and timing. Preserve identity, anatomy, object geometry, composition, readable text and spatial relationships. Maintain continuity. Never add unrelated people or objects, invent text, morph subjects, or turn the scene into a product advertisement unless supported.
-${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
-  ).slice(0,10000);
-  const discovered=[];
+${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}
+`).slice(0,10000);
+
+  const localUrl=(localEngineUrl||"").trim().replace(/\/$/,"");
+  if(!localUrl) throw new Error("Dedicated Wan 2.2 GPU API URL is not configured.");
+  if(/^https?:\/\/(127\.0\.0\.1|localhost)(:\\d+)?$/i.test(localUrl) && /^https:/i.test(window.location.protocol)){
+   throw new Error("Mira is running online, but the GPU URL is localhost. Enter the public HTTPS URL of your dedicated Wan 2.2 GPU API and enable CORS.");
+  }
+
+  setStatus("Checking dedicated Wan 2.2 GPU…");
+  await checkLocalEngine();
 
   for(let segment=0;segment<segmentCount;segment++){
-   let result=null,lastError="";
    const activeShot=plan?.shots?.[segment]||plan?.shots?.[segment%Math.max(1,plan?.shots?.length||1)];
-   const segmentPrompt=basePrompt+"\nACTIVE SHOT ONLY: "+(activeShot?.name||"Primary action")+"\nACTION: "+(activeShot?.action||brief)+"\nCAMERA: "+(activeShot?.camera||"slow cinematic push-in")+"\nSEGMENT "+(segment+1)+" OF "+segmentCount+". Generate ONLY this shot. Continue naturally from the previous segment while preserving the same scene, identities, wardrobe, objects and lighting.";
-   const localUrl=(engine==="personal"?(localEngineUrl||""):"").trim();
+   const segmentPrompt=basePrompt+
+    "\nACTIVE SHOT ONLY: "+(activeShot?.name||"Primary action")+
+    "\nACTION: "+(activeShot?.action||brief)+
+    "\nCAMERA: "+(activeShot?.camera||"slow cinematic push-in")+
+    "\nSEGMENT "+(segment+1)+" OF "+segmentCount+
+    ". Generate ONLY this shot. Continue naturally from the previous segment while preserving the same scene, identities, wardrobe, objects and lighting.";
 
-   if(localUrl){
-    try{
-     if(/^https?:\/\/(127\.0\.0\.1|localhost)(:\\d+)?$/i.test(localUrl) && /^https:/i.test(window.location.protocol)) throw new Error("Mira is online on Vercel, but the GPU URL is localhost. Enter the public HTTPS URL of your dedicated Wan 2.2 GPU API and enable CORS.");
-     setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your Wan GPU…");
-     const form=new FormData();
-     form.append("image",currentBlob,"mira-reference.jpg");form.append("prompt",segmentPrompt);
-     form.append("negative_prompt",negative);const segmentFrames=segmentDuration<=3.5?16:segmentDuration<=7?32:64;form.append("frames",String(segmentFrames));form.append("width",aspect==="9:16"?"480":"832");form.append("height",aspect==="9:16"?"832":"480");form.append("fps","12");form.append("steps","8");
-     form.append("shots",JSON.stringify([plan.shots[segment]||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
-     const response=await fetch(localUrl.replace(/\/$/,"")+"/generate",{method:"POST",headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,body:form});
-     if(!response.ok)throw new Error("Dedicated GPU server returned HTTP "+response.status);
-     const data=await response.json();
-     if(data.video_url){segmentUrls.push(new URL(data.video_url,localUrl).href);continue;}
-     if(!data.job_id)throw new Error("Configured GPU server returned no job id.");
-     let completed=false;
-     for(let attempt=0;attempt<180;attempt++){
-      await new Promise(r=>setTimeout(r,2000));
-      const sr=await fetch(localUrl.replace(/\/$/,"")+"/jobs/"+data.job_id);
-      if(!sr.ok)throw new Error("Could not read cloud GPU job status.");
-      const st=await sr.json();
-      if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
-      if(st.status==="completed"&&st.video_url){segmentUrls.push(new URL(st.video_url,localUrl).href);completed=true;break;}
-      if(st.status==="failed")throw new Error(st.message||"Cloud GPU generation failed.");
-     }
-     if(completed)continue;
-     throw new Error("Cloud GPU generation timed out.");
-    }catch(cloudError){lastError=String(cloudError?.message||cloudError||"");}
+   setStatus("Generating segment "+(segment+1)+" of "+segmentCount+" on your dedicated Wan 2.2 GPU…");
+   const form=new FormData();
+   form.append("image",currentBlob,"mira-reference.jpg");
+   form.append("prompt",segmentPrompt);
+   form.append("negative_prompt",negative);
+   const segmentFrames=segmentDuration<=3.5?16:segmentDuration<=7?32:64;
+   form.append("frames",String(segmentFrames));
+   form.append("width",aspect==="9:16"?"480":"832");
+   form.append("height",aspect==="9:16"?"832":"480");
+   form.append("fps","12");
+   form.append("steps","8");
+   form.append("shots",JSON.stringify([activeShot||{name:"Primary action",duration:segmentDuration,action:brief,camera:"slow cinematic push-in"}]));
+   if(segment>0) form.append("last_image",currentBlob,"mira-continuity.jpg");
+
+   let response;
+   try{
+    response=await fetch(localUrl+"/generate",{
+     method:"POST",
+     headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined,
+     body:form
+    });
+   }catch(e){
+    throw new Error("Could not reach the dedicated Wan 2.2 GPU API. Check the public HTTPS URL, CORS, firewall and GPU server status.");
+   }
+   if(!response.ok){
+    let detail="";
+    try{const body=await response.json();detail=body?.message||body?.detail||""}catch{}
+    throw new Error("Dedicated GPU server returned HTTP "+response.status+(detail?": "+detail:""));
    }
 
-   const providerHealth=JSON.parse(localStorage.getItem("miraProviderHealth")||"{}");
-   const now=Date.now();
-   const availableProviders=[...discovered].sort((a,b)=>{
-    const ah=providerHealth[a]||{}, bh=providerHealth[b]||{};
-    const aReady=!ah.cooldownUntil||ah.cooldownUntil<=now;
-    const bReady=!bh.cooldownUntil||bh.cooldownUntil<=now;
-    if(aReady!==bReady)return aReady?-1:1;
-    return (ah.failureCount||0)-(bh.failureCount||0);
-   });
-   for(let pi=0;pi<availableProviders.length;pi++){
-    const space=availableProviders[pi];
-    try{
-     setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+availableProviders.length+" — "+space.split("/")[0]+"…");
-     const response=await generateWithFreeSpace(space,currentBlob,segmentPrompt,negative,segmentDuration);
-     result=response.result;
-     if(result){
-      const found=extractVideoRef(result,space);
-      if(found){providerHealth[space]={success:true,lastSuccess:Date.now(),cooldownUntil:0};localStorage.setItem("miraProviderHealth",JSON.stringify(providerHealth));segmentUrls.push(found);break;}
-      lastError="Wan 2.2 returned no usable video file.";
-     }
-    }catch(providerError){
-     lastError=String(providerError?.message||providerError||"");
-     const previous=providerHealth[space]?.failureCount||0; providerHealth[space]={success:false,lastFailure:Date.now(),failureCount:previous+1,cooldownUntil:Date.now()+Math.min(15*60*1000,15000*Math.pow(2,Math.min(previous,5)))}; localStorage.setItem("miraProviderHealth",JSON.stringify(providerHealth));
+   const data=await response.json();
+   let videoUrl=data?.video_url||data?.url||"";
+   if(!videoUrl && data?.job_id){
+    for(let attempt=0;attempt<180;attempt++){
+     await new Promise(r=>setTimeout(r,2000));
+     const sr=await fetch(localUrl+"/jobs/"+encodeURIComponent(data.job_id),{
+      headers:gpuApiKey?{"Authorization":"Bearer "+gpuApiKey}:undefined
+     });
+     if(!sr.ok) throw new Error("Could not read dedicated GPU job status (HTTP "+sr.status+").");
+     const st=await sr.json();
+     if(st.message)setStatus("Segment "+(segment+1)+"/"+segmentCount+" — "+st.message);
+     if(st.status==="completed"&&(st.video_url||st.url)){videoUrl=st.video_url||st.url;break;}
+     if(st.status==="failed"||st.status==="error") throw new Error(st.message||st.error||"Dedicated Wan 2.2 generation failed.");
+     if(st.status==="cancelled") throw new Error("Dedicated Wan 2.2 generation was cancelled.");
     }
+    if(!videoUrl) throw new Error("Dedicated Wan 2.2 GPU generation timed out.");
    }
-   if(segmentUrls.length!==segment+1){
-    if(/Failed to fetch|NetworkError|ERR_FAILED|localhost|127\\.0\\.0\\.1|CORS/i.test(lastError)) throw new Error("Mira could not reach the dedicated Wan 2.2 GPU API. On Vercel, do not use localhost/127.0.0.1. Use your GPU server's public HTTPS API URL with CORS enabled.");
-    if(/401|404|paused|private|quota|ZeroGPU|unauthorized|not found/i.test(lastError)){
-     throw new Error("No currently usable free Wan 2.2 GPU backend was available. Mira will not replace real AI generation with a zoom/pan animation. Try again later or connect a Wan 2.2 GPU endpoint.");
-    }
-    throw new Error(lastError||"No GPU backend returned a usable AI video segment.");
-   }
+   if(!videoUrl) throw new Error("Dedicated GPU returned no video URL.");
+   videoUrl=new URL(videoUrl,localUrl).href;
+   segmentUrls.push(videoUrl);
+
    if(segment+1<segmentCount){
     try{
-     setStatus("Building continuity frame for segment "+(segment+2)+" of "+segmentCount+"…");
-     const continuityUrl=segmentUrls[segment];
-     const vr=await fetch(continuityUrl,{mode:"cors"});
+     const vr=await fetch(videoUrl,{mode:"cors"});
      if(vr.ok){
       const vb=await vr.blob();
       const vu=URL.createObjectURL(vb);
@@ -271,7 +251,8 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
       await new Promise((res,rej)=>{vv.onloadedmetadata=res;vv.onerror=()=>rej(new Error("continuity decode failed"));});
       vv.currentTime=Math.max(0,(vv.duration||0)-0.08);
       await new Promise((res,rej)=>{vv.onseeked=res;vv.onerror=()=>rej(new Error("continuity seek failed"));});
-      const cc=document.createElement("canvas");cc.width=720;cc.height=1280;
+      const cc=document.createElement("canvas");
+      cc.width=aspect==="9:16"?720:960;cc.height=aspect==="9:16"?1280:540;
       const ctx=cc.getContext("2d");ctx.fillStyle="#09090b";ctx.fillRect(0,0,cc.width,cc.height);
       const scale=Math.min(cc.width/vv.videoWidth,cc.height/vv.videoHeight);
       const dw=vv.videoWidth*scale,dh=vv.videoHeight*scale;
@@ -279,17 +260,19 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
       currentBlob=await new Promise(res=>cc.toBlob(res,"image/jpeg",.82));
       URL.revokeObjectURL(vu);
      }
-    }catch{ /* keep the original reference if the public video blocks frame extraction */ }
+    }catch{
+     setStatus("Segment "+(segment+1)+" generated. Continuing from the original reference frame…");
+    }
    }
   }
 
-  setStatus("Assembling "+segmentUrls.length+" generated segment"+(segmentUrls.length===1?"":"s")+"…");
+  setStatus("Assembling "+segmentUrls.length+" real AI-generated segment"+(segmentUrls.length===1?"":"s")+"…");
   const finalVideo=await stitchVideos(segmentUrls);
   setVideo(finalVideo);
-  setJob({requestId:"mira-long-film-"+Date.now(),segments:segmentUrls.length});
-  setStatus("AI film ready — "+requestedDuration+"s requested.");
+  setJob({requestId:"mira-wan-"+Date.now(),segments:segmentUrls.length});
+  setStatus("AI film ready — generated entirely on your dedicated Wan 2.2 GPU.");
  }catch(e){
-  const message=String(e?.message||e||"Wan 2.2 dedicated GPU generation failed");
+  const message=String(e?.message||e||"Dedicated Wan 2.2 GPU generation failed");
   setError(message);setStatus("");
  }finally{
   setBusy(false);
