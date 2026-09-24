@@ -284,8 +284,8 @@ ${selectedMotionText(style,motion,intensity)} NEGATIVE CONSTRAINTS: ${negative}`
 
    const providerHealth=JSON.parse(localStorage.getItem("miraProviderHealth")||"{}");
    const availableProviders=[...discovered].filter(s=>!providerHealth[s]||providerHealth[s].cooldownUntil<Date.now());
-   for(let pi=0;pi<shuffledProviders.length;pi++){
-    const space=shuffledProviders[pi];
+   for(let pi=0;pi<availableProviders.length;pi++){
+    const space=availableProviders[pi];
     try{
      setStatus("Finding compatible free GPU backend: "+(pi+1)+"/"+availableProviders.length+" — "+space.split("/")[0]+"…");
      const response=await generateWithFreeSpace(space,currentBlob,segmentPrompt,negative,segmentDuration);
