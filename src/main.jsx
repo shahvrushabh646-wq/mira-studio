@@ -138,14 +138,14 @@ const buildPlan=async()=>{
  const checkLocalEngine=async()=>{const base=localEngineUrl.replace(/\/$/,"");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3500);try{const r=await fetch(base+"/health",{method:"GET",signal:controller.signal,mode:"cors"});if(!r.ok)throw new Error("Local GPU engine returned HTTP "+r.status);const data=await r.json();if(!data?.ready)throw new Error("Wan 2.2 local engine is reachable, but the model/checkpoint is not ready.");return data}finally{clearTimeout(timer)}};
  const discoverWanBackends=async()=>{
   const fallback=[
+    "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
     "r3gm/wan2-2-fp8da-aoti-preview",
     "r3gm/wan2-2-fp8da-aoti-preview2",
-    "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
-    "observantdistressed/Wan2.2-14B-Fast-Preview",
+    "kulkas2pintu/wan555",
     "Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom",
     "dream2589632147/Dream-wan2-2-fp8da-aoti-preview-2",
-    "multimodalart/Wan2.1-Fast",
-    "linoyts/wan2-2-i2v-rCM"
+    "Rchoks/wan555",
+    "KSYJA/wan2-2-fp8da-aoti-preview"
   ];
   try{
     const res=await fetch("https://huggingface.co/api/spaces?search=Wan2.2%20image%20to%20video&limit=100&full=true");
@@ -161,9 +161,10 @@ const buildPlan=async()=>{
   const entries=Object.entries(named);
   const candidates=entries.filter(([name,ep])=>{
    const text=(name+" "+JSON.stringify(ep)).toLowerCase();
-   return /generate.*video|image.*to.*video|i2v/.test(text);
+   const returns=JSON.stringify(ep?.returns||[]).toLowerCase();
+   return /generate.*video|image.*to.*video|i2v|wan/.test(text)||/video|filedata/.test(returns);
   });
-  return (candidates.find(([name,ep])=>/generate_video/i.test(name))||candidates[0]||entries.find(([name])=>/video/i.test(name))||null);
+  return (candidates.find(([name])=>/generate_video|i2v|generate.*video/i.test(name))||candidates[0]||entries.find(([name])=>/video|generate/i.test(name))||null);
  };
  const buildGradioInputs=(endpoint,blob,prompt,negative,d)=>{
   const params=endpoint?.parameters||endpoint?.inputs||[];
@@ -203,7 +204,7 @@ const buildPlan=async()=>{
  };
  const generateWithFreeSpace=async(space,blob,prompt,negative,d)=>{
   const client=await Client.connect(space);
-  const api=await client.view_api();
+  const api=await client.view_api(true);
   const selected=chooseVideoEndpoint(api);
   if(!selected)throw new Error("No compatible image-to-video endpoint exposed by this Space.");
   const [endpoint,definition]=selected;
