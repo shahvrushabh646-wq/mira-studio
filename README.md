@@ -9,7 +9,7 @@ Mira Studio turns a reference image into an AI-directed video. It opens in **Fre
 3. Set the creative direction and choose a short clip of up to 4 seconds.
 4. Build the director plan, review it, then select **Generate real AI video**.
 
-Video generation calls a public Hugging Face Wan 2.2 ZeroGPU Space directly from the browser. It requires no Mira account, key, or GPU setup. The image is uploaded to Hugging Face for analysis/generation. The public service has a daily GPU quota and shared queues; access may be busy or unavailable, so usage is not unlimited. Generated clips are silent and about five seconds long.
+Video generation calls a public Hugging Face Wan 2.2 ZeroGPU Space directly from the browser. It requires no Mira account, key, or GPU setup. The image is uploaded to Hugging Face for analysis/generation. The public service has a daily GPU quota and shared queues; access may be busy or unavailable, so usage is not unlimited. Generated clips are silent and up to four seconds long in the free shared mode.
 
 ## Other modes
 
