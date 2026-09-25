@@ -9,7 +9,7 @@ Mira Studio studies an uploaded image, writes a story grounded in that image, an
 3. Select **Analyze image & write story** and review the scene description, story, and shot plan.
 4. Select **Generate real AI video** to create a short Wan 2.2 clip.
 
-The app uses a public Hugging Face vision service for image analysis and a shared Wan 2.2 GPU for video generation. It does not require an API key or paid Mira account, but public GPU availability has daily quotas and queues. AI video generation is therefore not unlimited or guaranteed at all times; clips are short and silent. Your uploaded image is sent to these public services.
+The app uses public Hugging Face vision and Wan 2.2 GPU services. It works without a token when shared free capacity is available. If you hit a ZeroGPU run limit, you can optionally enter your own Hugging Face read token in the Generation mode settings. Mira sends that token directly from your browser to Hugging Face and does not save it. Account tokens may provide account-specific quota, but GPU access still has limits; video generation is not unlimited. Your uploaded image is sent to these public services.
 
 ## Free local option
 
