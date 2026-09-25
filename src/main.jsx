@@ -223,6 +223,8 @@ const generate=async()=>{
 FINAL DIRECTOR INSTRUCTION. The uploaded image is the absolute visual source of truth. Generate REAL AI motion with Wan 2.2 image-to-video on the configured dedicated GPU.
 VISUAL DIRECTOR SHEET:
 ${visualAnalysis||plan.reference||"Preserve the visible scene faithfully."}
+ONE IMAGE-GROUNDED STORY:
+${plan?.story||brief}
 USER CREATIVE PROMPT / BRIEF:
 ${brief}
 DIRECTOR SHOT PLAN:
