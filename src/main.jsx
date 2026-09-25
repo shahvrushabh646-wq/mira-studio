@@ -142,7 +142,7 @@ function App(){
  const prompt=`${sceneMode==="lecture"?"The user chose ACTIVE CLASSROOM LESSON. Analyze this upload for the instructor's appearance and lesson topic. Treat a classroom, board, and students as proposed staging if they are not visible; never report staged details as image facts.":"The user chose ANIMATE UPLOADED SCENE. Describe only what is visible and ground the story in the image."} Examine the uploaded image closely. Read clear wording. Identify who and what is visible, their positions, poses, clothing, expressions, important objects and text, scene/background, framing, and uncertainties. Do not guess obscured details.
 
 Return ONLY compact valid JSON, no markdown, with this shape: {"scene":"2 concise sentences about the visible image; distinguish visible facts from staging","subjects":[{"description":"appearance or object","position":"where in frame","pose":"visible pose","action":"visible or plausible next action"}],"story":"One coherent short story with a beginning, middle and ending, grounded in the image. Clearly mark proposed actions/staging.","shots":[{"name":"beat","action":"one action in this same story","camera":"simple move","timing":"time range"}],"preserve":["key identity, objects, exact visible text"],"avoid":["unsupported changes"]}. Use up to 5 subjects and 3 timed beats for this short clip. A proposed action may be creative, but never describe it as something already visible. Keep the story physically plausible, specific to this image, and continuous rather than a montage.`;
- const r=await vision.predict([handle_file(blob),prompt],"/qwen_vl_inference");
+ const r=await vision.predict("/qwen_vl_inference",[handle_file(blob),prompt]);
  return String(r?.data?.[0]||"").slice(0,7000);
 };
 const buildPlan=async()=>{
@@ -194,7 +194,7 @@ const generatePublicAI=async()=>{
   setStatus("Connecting to Hugging Face’s shared free Wan 2.2 GPU…");
   const client=await Client.connect("r3gm/wan2-2-fp8da-aoti-preview");
   setStatus("Waiting for shared GPU, then generating real subject motion… this may take a few minutes.");
-  const result=await client.predict([handle_file(imageBlob),prompt,`${negative}, static image, camera zoom only`,Math.min(5,Number(duration)||4),1,1,quality==="professional"?8:4,Math.floor(Math.random()*2147483647),true],"/generate_video");
+  const result=await client.predict("/generate_video",[handle_file(imageBlob),null,prompt,quality==="professional"?8:4,`${negative}, static image, camera zoom only`,Math.min(4,Number(duration)||4),1,1,Math.floor(Math.random()*2147483647),true,quality==="professional"?7:5,"UniPCMultistep",3,16,true,true,true]);
   const output=result?.data?.[0];const remoteUrl=typeof output==="string"?output:(output?.url||output?.video?.url||output?.path||output?.video?.path);
   if(!remoteUrl)throw new Error("Wan 2.2 finished without returning a video. Try again later.");
   let videoUrl=remoteUrl;if(!/^https?:|^blob:|^data:/i.test(videoUrl))videoUrl=new URL(videoUrl,"https://r3gm-wan2-2-fp8da-aoti-preview.hf.space").href;
