@@ -1,22 +1,19 @@
 # Mira Studio
 
-Mira Studio offers a free local classroom-animation mode and optional AI image-to-video modes.
+Mira Studio studies an uploaded image, writes a story grounded in that image, and turns the story into a short video.
 
-## Free local classroom video
+## Image-to-story-to-video
 
-1. Upload an image and choose **Unlimited free local classroom video • stylized** (the default).
-2. Set a lesson topic and story, then select **Write local story**.
-3. Select **Render unlimited local classroom video** and save the WebM file.
+1. Upload any image.
+2. Keep **Animate the uploaded scene** selected to preserve the visible subjects and setting. Choose **Active classroom lesson** only when you want to stage a classroom.
+3. Select **Analyze image & write story** and review the scene description, story, and shot plan.
+4. Select **Generate real AI video** to create a short Wan 2.2 clip.
 
-This mode runs in your browser without an account, GPU, cloud service, or per-render quota. It draws a stylized 2D classroom with an animated teacher, students, lesson beats, captions, and your uploaded picture as a classroom reference card. Mira does not analyze the picture in this mode, animate the pictured people, or create photoreal AI video. Clips are capped at five minutes; render speed and storage depend on your device. Video is silent.
+The app uses a public Hugging Face vision service for image analysis and a shared Wan 2.2 GPU for video generation. It does not require an API key or paid Mira account, but public GPU availability has daily quotas and queues. AI video generation is therefore not unlimited or guaranteed at all times; clips are short and silent. Your uploaded image is sent to these public services.
 
-## Photoreal AI video
+## Free local option
 
-Choose **Photoreal AI video • shared daily GPU limit** to analyze the uploaded picture and request a short Wan 2.2 image-to-video clip. This sends the image to Hugging Face's public service, which has shared GPU quotas and queues. AI renders therefore are not unlimited. A dedicated Wan 2.2 GPU server can be configured in the GPU mode, but running that server may incur costs.
-
-## Other mode
-
-**Local camera motion** creates a WebM with camera movement over the still image. People and objects remain still.
+**Free local classroom animation • stylized** renders in the browser without a GPU service or per-render quota. It is a stylized classroom animation and is not a general image understanding or photoreal video model. Local camera motion also runs in the browser, but keeps people and objects still.
 
 ## Run or deploy
 
