@@ -1,29 +1,31 @@
 # Mira Studio
 
-Mira Studio turns a reference image into an AI-directed video. It opens in **Free AI video** mode with the **Active classroom lesson** scene format selected.
+Mira Studio offers a free local classroom-animation mode and optional AI image-to-video modes.
 
-## Free AI video
+## Free local classroom video
 
-1. Upload an image, such as an instructor or education poster.
-2. Keep **Active classroom lesson** selected to stage the visible instructor as a teacher with students and a board, or choose **Animate the uploaded scene** to preserve the existing scene.
-3. Set the creative direction and choose a short clip of up to 4 seconds.
-4. Build the director plan, review it, then select **Generate real AI video**.
+1. Upload an image and choose **Unlimited free local classroom video • stylized** (the default).
+2. Set a lesson topic and story, then select **Write local story**.
+3. Select **Render unlimited local classroom video** and save the WebM file.
 
-Video generation calls a public Hugging Face Wan 2.2 ZeroGPU Space directly from the browser. It requires no Mira account, key, or GPU setup. The image is uploaded to Hugging Face for analysis/generation. The public service has a daily GPU quota and shared queues; access may be busy or unavailable, so usage is not unlimited. Generated clips are silent and up to four seconds long in the free shared mode.
+This mode runs in your browser without an account, GPU, cloud service, or per-render quota. It draws a stylized 2D classroom with an animated teacher, students, lesson beats, captions, and your uploaded picture as a classroom reference card. Mira does not analyze the picture in this mode, animate the pictured people, or create photoreal AI video. Clips are capped at five minutes; render speed and storage depend on your device. Video is silent.
 
-## Other modes
+## Photoreal AI video
 
-- **Local camera motion** renders an instant WebM in the browser. It moves the camera over the image; it does not animate people or objects.
-- **My Wan 2.2 GPU server** supports a user-configured server for longer AI video jobs and stitching.
+Choose **Photoreal AI video • shared daily GPU limit** to analyze the uploaded picture and request a short Wan 2.2 image-to-video clip. This sends the image to Hugging Face's public service, which has shared GPU quotas and queues. AI renders therefore are not unlimited. A dedicated Wan 2.2 GPU server can be configured in the GPU mode, but running that server may incur costs.
+
+## Other mode
+
+**Local camera motion** creates a WebM with camera movement over the still image. People and objects remain still.
 
 ## Run or deploy
 
 Requires Node.js 22. Install dependencies and start the app:
 
 ```powershell
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
-To deploy to Vercel, import the project repository. The included `vercel.json` configures the Vite build and output directory. Free AI uses the public shared service and does not require Vercel secrets.
+To deploy to Vercel, import the repository. The included `vercel.json` configures the Vite build and output directory.
 
